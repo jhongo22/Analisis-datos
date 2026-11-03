@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -305,7 +305,7 @@ export default function PlayPage() {
   const isMyTabAnOutlier =
     myRecord?.tabs_open !== null &&
     myRecord?.tabs_open !== undefined &&
-    (Number(myRecord.tabs_open) < 0 || Number(myRecord.tabs_open) > 2000); // > $2.000.000/mes = exagerado
+    (Number(myRecord.tabs_open) < 0 || Number(myRecord.tabs_open) > 500); // > $500.000/mes = exagerado para $2M
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between max-w-md mx-auto border-x border-[#E2E8F0] shadow-sm relative">
@@ -512,7 +512,9 @@ export default function PlayPage() {
                       <p className="text-base text-[#334155]">
                         Dijiste que gastas{" "}
                         <strong className="text-[#0F172A]">
-                          ${myRecord?.tabs_open} mil al mes
+                          ${myRecord?.tabs_open !== null && myRecord?.tabs_open !== undefined
+                            ? Math.round(Number(myRecord.tabs_open) * 1000).toLocaleString("es-CO")
+                            : "0"} al mes
                         </strong>{" "}
                         en compras por internet. En breve veremos los resultados del salón.
                       </p>
@@ -547,7 +549,7 @@ export default function PlayPage() {
                           ¿Cuánto gastas al mes en compras por internet?
                         </label>
                         <p className="text-xs font-semibold text-[#475569]">
-                          Escríbelo en miles de pesos (ej: 150 = $150.000).
+                          Ingresa el monto en pesos (los puntos se colocan automáticamente).
                         </p>
                         <div className="relative">
                           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-[#475569]">
@@ -555,17 +557,26 @@ export default function PlayPage() {
                           </span>
                           <input
                             id="tabs-input"
-                            type="number"
-                            step="1"
+                            type="text"
+                            
                             inputMode="numeric"
                             required
                             value={tabsOpenInput}
-                            onChange={(e) => setTabsOpenInput(e.target.value)}
-                            placeholder="Ej: 150 (o 50000 para probar)"
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, "");
+                              if (!digits) {
+                                setTabsOpenInput("");
+                              } else {
+                                setTabsOpenInput(
+                                  Number(digits).toLocaleString("es-CO")
+                                );
+                              }
+                            }}
+                            placeholder="Ej: 300.000 (o 5.000.000)"
                             className="w-full rounded-xl bg-[#F8FAFC] border-2 border-[#CBD5E1] focus:border-[#0F172A] pl-8 pr-14 py-3 text-base font-bold text-[#0F172A] focus:outline-none"
                           />
                           <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-[#475569]">
-                            mil
+                            COP
                           </span>
                         </div>
                       </div>
@@ -730,8 +741,10 @@ export default function PlayPage() {
 
                     {isMyTabAnOutlier && (
                       <div className="p-4 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-sm text-[#991B1B] font-bold">
-                        ¡Tú pusiste el número exagerado (${myRecord?.tabs_open}{" "}
-                        mil al mes)! Buen ejemplo de cómo se daña un reporte.
+                        ¡Tú pusiste un número exagerado (${myRecord?.tabs_open !== null && myRecord?.tabs_open !== undefined
+                          ? Math.round(Number(myRecord.tabs_open) * 1000).toLocaleString("es-CO")
+                          : "0"}{" "}
+                        ! Buen ejemplo de cómo se daña un reporte.
                       </div>
                     )}
                   </div>

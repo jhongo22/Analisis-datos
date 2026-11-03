@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -51,7 +51,7 @@ function formatNumber(n: number): string {
 
 // Pregunta 1 = gasto mensual en compras por internet, en MILES de pesos.
 // Se guarda en la columna `tabs_open` para no migrar la base de datos.
-const MAX_MONTHLY_SPEND = 2000; // > $2.000.000 al mes se considera dato exagerado
+const MAX_MONTHLY_SPEND = 500; // > $500.000 al mes se considera dato atípico (para ingreso de $2M)
 const VISITORS_WHO_LEFT = 620; // personas que cerraron la web por el formulario (Prueba 2)
 
 // 150 -> "$150 mil" ; 1250 -> "$1,3 millones" ; 620*150 -> "$93 millones"
@@ -871,7 +871,7 @@ export default function PresenterPage() {
                     >
                       {state.clean_outliers === 0
                         ? "Datos sin revisar"
-                        : "Datos limpios (hasta $2 millones)"}
+                        : "Datos limpios (hasta $500 mil)"}
                     </span>
                     <h3 className="font-display text-xl font-bold text-[#0F172A] mt-0.5">
                       Gasto mensual promedio del salón
@@ -973,12 +973,12 @@ export default function PresenterPage() {
                         ? `Dato exagerado: ${analytics.outliers
                             .map((o) => `${o.nickname} (${formatMiles(Number(o.tabs_open))})`)
                             .join(", ")}`
-                        : `Se quitaron ${analytics.outliers.length} respuestas exageradas (más de $2 millones o negativas).`}
+                        : `Se quitaron ${analytics.outliers.length} respuestas exageradas (más de $500 mil o negativas).`}
                     </span>
                   </div>
                 ) : (
                   <div className="rounded-xl px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] text-xs font-semibold text-[#475569]">
-                    Todos los datos están en rango normal ($0 a $2 millones).
+                    Todos los datos están en rango realista ($0 a $500 mil).
                   </div>
                 )}
               </div>
@@ -1018,7 +1018,7 @@ export default function PresenterPage() {
 
                 <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs font-semibold text-[#334155] text-center">
                   {analytics.cleanTabsCount === 0 && analytics.withTabsCount > 0
-                    ? "Nota: Todos pusieron más de $2 millones al mes (0 datos válidos)."
+                    ? "Nota: Todos pusieron más de $500 mil al mes (0 datos válidos)."
                     : "Limpiar datos antes de decidir evita errores millonarios."}
                 </div>
               </div>
