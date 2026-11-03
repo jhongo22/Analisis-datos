@@ -28,14 +28,28 @@ export async function POST(request: Request) {
       );
     }
 
+    let parsedTabs: number | undefined = undefined;
+    if (tabs_open !== undefined && tabs_open !== null && tabs_open !== "") {
+      if (typeof tabs_open === "number" && Number.isFinite(tabs_open)) {
+        parsedTabs = tabs_open;
+      } else if (typeof tabs_open === "string") {
+        const direct = Number(tabs_open);
+        if (Number.isFinite(direct)) {
+          parsedTabs = direct;
+        } else {
+          const digits = tabs_open.replace(/\D/g, "");
+          if (digits !== "") {
+            parsedTabs = Math.round((Number(digits) / 1000) * 100) / 100;
+          }
+        }
+      }
+    }
+
     const participant = await upsertParticipant({
       id,
       nickname,
       avatar,
-      tabs_open:
-        tabs_open !== undefined && tabs_open !== null && tabs_open !== ""
-          ? Number(tabs_open)
-          : undefined,
+      tabs_open: parsedTabs,
       form_behavior,
       shopping_time,
       manager_decision,

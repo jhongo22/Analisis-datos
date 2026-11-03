@@ -105,6 +105,24 @@ export default function PlayPage() {
     return participants.find((p) => p.id === participantId);
   }, [participants, participantId]);
 
+  const myRecordKey = myRecord
+    ? [
+        myRecord.id,
+        myRecord.nickname,
+        myRecord.avatar,
+        myRecord.tabs_open,
+        myRecord.form_behavior,
+        myRecord.shopping_time,
+        myRecord.manager_decision,
+        myRecord.wait_tolerance,
+        myRecord.cart_abandon_reason,
+        myRecord.trust_signal,
+        myRecord.shipping_choice,
+        myRecord.return_reason,
+      ].join("|")
+    : "";
+  const isRoomEmpty = participants.length === 0;
+
   useEffect(() => {
     if (myRecord) {
       if (!isEditingProfile) {
@@ -119,7 +137,7 @@ export default function PlayPage() {
         myRecord.shopping_time !== null
       ) {
         setPhase1Submitted(true);
-        setTabsOpenInput(String(myRecord.tabs_open));
+        setTabsOpenInput(Math.round(Number(myRecord.tabs_open) * 1000).toLocaleString("es-CO"));
         setFormBehavior(myRecord.form_behavior);
         setShoppingTime(myRecord.shopping_time);
       } else {
@@ -163,7 +181,8 @@ export default function PlayPage() {
       setPhase3Submitted(false);
       setPhase4Submitted(false);
     }
-  }, [myRecord, hasJoined, isEditingProfile, participants.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRecordKey, hasJoined, isEditingProfile, isRoomEmpty]);
 
   const handleJoinLobby = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,14 +214,17 @@ export default function PlayPage() {
 
   const handleSubmitPhase1 = async (e: React.FormEvent) => {
     e.preventDefault();
+    const rawDigits = tabsOpenInput.replace(/\D/g, "");
     if (
-      tabsOpenInput === "" ||
+      rawDigits === "" ||
       !formBehavior ||
       !shoppingTime ||
       !participantId
     ) {
       return;
     }
+
+    const tabsInThousands = Math.round((Number(rawDigits) / 1000) * 100) / 100;
 
     setIsSubmitting(true);
     try {
@@ -213,7 +235,7 @@ export default function PlayPage() {
           id: participantId,
           nickname: nicknameInput.trim() || "Participante",
           avatar: selectedAvatar,
-          tabs_open: Number(tabsOpenInput),
+          tabs_open: tabsInThousands,
           form_behavior: formBehavior,
           shopping_time: shoppingTime,
         }),
