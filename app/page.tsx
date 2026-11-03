@@ -14,7 +14,7 @@ export default function HomePage() {
           </span>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-sm text-[#334155] font-medium">
-          <span>Presentación de 20 minutos</span>
+          <span>Presentación analisis de datos</span>
         </div>
       </header>
 

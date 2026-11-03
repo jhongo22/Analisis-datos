@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,6 +10,9 @@ import type {
   ManagerDecisionType,
   WaitToleranceType,
   CartAbandonType,
+  TrustSignalType,
+  ShippingChoiceType,
+  ReturnReasonType,
 } from "@/lib/db";
 import {
   CheckCircle2,
@@ -23,6 +26,10 @@ import {
   UserCheck,
   Zap,
   ShoppingCart,
+  Truck,
+  ShieldCheck,
+  HeartHandshake,
+  Sparkles,
 } from "lucide-react";
 
 const STORAGE_ID_KEY = "expo_participant_id_v1";
@@ -69,6 +76,15 @@ export default function PlayPage() {
   const [cartAbandonReason, setCartAbandonReason] =
     useState<CartAbandonType | null>(null);
   const [phase3Submitted, setPhase3Submitted] = useState<boolean>(false);
+
+  // Phase 4 state
+  const [trustSignal, setTrustSignal] = useState<TrustSignalType | null>(null);
+  const [shippingChoice, setShippingChoice] =
+    useState<ShippingChoiceType | null>(null);
+  const [returnReason, setReturnReason] = useState<ReturnReasonType | null>(
+    null
+  );
+  const [phase4Submitted, setPhase4Submitted] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -126,12 +142,26 @@ export default function PlayPage() {
       } else {
         setPhase3Submitted(false);
       }
+
+      if (
+        myRecord.trust_signal !== null &&
+        myRecord.shipping_choice !== null &&
+        myRecord.return_reason !== null
+      ) {
+        setPhase4Submitted(true);
+        setTrustSignal(myRecord.trust_signal);
+        setShippingChoice(myRecord.shipping_choice);
+        setReturnReason(myRecord.return_reason);
+      } else {
+        setPhase4Submitted(false);
+      }
     } else if (hasJoined && participants.length === 0) {
       setHasJoined(false);
       setIsEditingProfile(false);
       setPhase1Submitted(false);
       setSelectedDecision(null);
       setPhase3Submitted(false);
+      setPhase4Submitted(false);
     }
   }, [myRecord, hasJoined, isEditingProfile, participants.length]);
 
@@ -244,10 +274,38 @@ export default function PlayPage() {
     }
   };
 
+  const handleSubmitPhase4 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!trustSignal || !shippingChoice || !returnReason || !participantId)
+      return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/participate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: participantId,
+          nickname: nicknameInput.trim() || "Participante",
+          avatar: selectedAvatar,
+          trust_signal: trustSignal,
+          shipping_choice: shippingChoice,
+          return_reason: returnReason,
+        }),
+      });
+      if (res.ok) {
+        setPhase4Submitted(true);
+        await refresh();
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const isMyTabAnOutlier =
     myRecord?.tabs_open !== null &&
     myRecord?.tabs_open !== undefined &&
-    (Number(myRecord.tabs_open) < 0 || Number(myRecord.tabs_open) > 80);
+    (Number(myRecord.tabs_open) < 0 || Number(myRecord.tabs_open) > 2000); // > $2.000.000/mes = exagerado
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col justify-between max-w-md mx-auto border-x border-[#E2E8F0] shadow-sm relative">
@@ -452,11 +510,11 @@ export default function PlayPage() {
                         ¡Respuestas enviadas! (+20 pts)
                       </h3>
                       <p className="text-base text-[#334155]">
-                        Dijiste que tienes{" "}
+                        Dijiste que gastas{" "}
                         <strong className="text-[#0F172A]">
-                          {myRecord?.tabs_open} pestañas
+                          ${myRecord?.tabs_open} mil al mes
                         </strong>{" "}
-                        abiertas. En breve veremos los resultados del salón.
+                        en compras por internet. En breve veremos los resultados del salón.
                       </p>
                       <button
                         onClick={() => setPhase1Submitted(false)}
@@ -486,19 +544,30 @@ export default function PlayPage() {
                           htmlFor="tabs-input"
                           className="block text-base font-bold text-[#0F172A]"
                         >
-                          ¿Cuántas pestañas del navegador o aplicaciones tienes
-                          abiertas ahora mismo?
+                          ¿Cuánto gastas al mes en compras por internet?
                         </label>
-                        <input
-                          id="tabs-input"
-                          type="number"
-                          step="1"
-                          required
-                          value={tabsOpenInput}
-                          onChange={(e) => setTabsOpenInput(e.target.value)}
-                          placeholder="Ej: 12 (o pon 9999 para probar)"
-                          className="w-full rounded-xl bg-[#F8FAFC] border-2 border-[#CBD5E1] focus:border-[#0F172A] px-3.5 py-3 text-base font-bold text-[#0F172A] focus:outline-none"
-                        />
+                        <p className="text-xs font-semibold text-[#475569]">
+                          Escríbelo en miles de pesos (ej: 150 = $150.000).
+                        </p>
+                        <div className="relative">
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-[#475569]">
+                            $
+                          </span>
+                          <input
+                            id="tabs-input"
+                            type="number"
+                            step="1"
+                            inputMode="numeric"
+                            required
+                            value={tabsOpenInput}
+                            onChange={(e) => setTabsOpenInput(e.target.value)}
+                            placeholder="Ej: 150 (o 50000 para probar)"
+                            className="w-full rounded-xl bg-[#F8FAFC] border-2 border-[#CBD5E1] focus:border-[#0F172A] pl-8 pr-14 py-3 text-base font-bold text-[#0F172A] focus:outline-none"
+                          />
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-[#475569]">
+                            mil
+                          </span>
+                        </div>
                       </div>
 
                       {/* Pregunta 2 */}
@@ -661,8 +730,8 @@ export default function PlayPage() {
 
                     {isMyTabAnOutlier && (
                       <div className="p-4 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-sm text-[#991B1B] font-bold">
-                        ¡Tú pusiste el número exagerado ({myRecord?.tabs_open}{" "}
-                        pestañas)! Buen ejemplo de cómo se daña un reporte.
+                        ¡Tú pusiste el número exagerado (${myRecord?.tabs_open}{" "}
+                        mil al mes)! Buen ejemplo de cómo se daña un reporte.
                       </div>
                     )}
                   </div>
@@ -680,7 +749,7 @@ export default function PlayPage() {
                 >
                   <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-1.5">
                     <span className="text-xs font-bold text-[#2563EB]">
-                      Prueba 2: Tú eres el gerente
+                      Prueba 4: Tú eres el gerente
                     </span>
                     <p className="text-sm text-[#334155] leading-relaxed">
                       Gastas <strong>$2.000.000</strong> en anuncios. Entran{" "}
@@ -815,7 +884,7 @@ export default function PlayPage() {
                     <form onSubmit={handleSubmitPhase3} className="space-y-4">
                       <div>
                         <p className="text-xs font-bold text-[#2563EB]">
-                          Prueba 3: La velocidad de respuesta
+                          Prueba 2: La velocidad de respuesta
                         </p>
                         <h2 className="font-display text-2xl font-bold text-[#0F172A]">
                           ¿Cuánta paciencia tienes como cliente?
@@ -942,7 +1011,229 @@ export default function PlayPage() {
                 </motion.div>
               )}
 
-              {/* FASE 4: FINAL_PODIUM */}
+              {/* =========================================================
+                  FASE 4: PHASE_4_JOURNEY ("PsicologÃ­a y RetenciÃ³n")
+              ========================================================= */}
+              {state.current_phase === "PHASE_4_JOURNEY" && (
+                <motion.div
+                  key="PHASE_4_JOURNEY"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-4"
+                >
+                  {phase4Submitted ? (
+                    <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 text-center space-y-4 shadow-[6px_6px_0px_#059669]">
+                      <CheckCircle2 className="w-14 h-14 text-[#059669] mx-auto" />
+                      <h3 className="font-display text-2xl font-bold text-[#0F172A]">
+                        Â¡Respuestas listas! (+30 pts)
+                      </h3>
+                      <p className="text-sm text-[#334155]">
+                        Mira el proyector para descubrir la trampa del envÃ­o gratis y el verdadero secreto de la retenciÃ³n.
+                      </p>
+                      <button
+                        onClick={() => setPhase4Submitted(false)}
+                        className="text-sm font-bold text-[#2563EB] underline"
+                      >
+                        Cambiar respuesta
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSubmitPhase4} className="space-y-4">
+                      <div>
+                        <p className="text-xs font-bold text-[#2563EB]">
+                          Prueba 3: Psicología y retención del cliente
+                        </p>
+                        <h2 className="font-display text-2xl font-bold text-[#0F172A]">
+                          ¿Cómo decides tú al comprar?
+                        </h2>
+                      </div>
+
+                      {/* Pregunta 1: Confianza previa */}
+                      <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-[#2563EB]">
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Pregunta 1: Confianza</span>
+                        </div>
+                        <p className="text-base font-bold text-[#0F172A]">
+                          Vas a comprar en una tienda online nueva que nunca habÃ­as visto. Â¿QuÃ© es lo PRIMERO que buscas para confiar?
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          {[
+                            {
+                              id: "REVIEWS" as TrustSignalType,
+                              label: "Opiniones, fotos y reseÃ±as de otros clientes.",
+                            },
+                            {
+                              id: "WHATSAPP_CONTACT" as TrustSignalType,
+                              label: "Que tengan botÃ³n de WhatsApp para hablar con alguien.",
+                            },
+                            {
+                              id: "FOLLOWERS" as TrustSignalType,
+                              label: "Que tengan miles de seguidores y publicaciones activas.",
+                            },
+                            {
+                              id: "PRICE_ONLY" as TrustSignalType,
+                              label: "Solo el precio: si estÃ¡ muy barato, me arriesgo.",
+                            },
+                          ].map((opt) => (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => setTrustSignal(opt.id)}
+                              className={`w-full min-h-[48px] text-left p-3.5 rounded-xl border-2 text-sm font-bold transition-colors ${
+                                trustSignal === opt.id
+                                  ? "bg-[#EFF6FF] border-[#2563EB] text-[#1E3A8A]"
+                                  : "bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Pregunta 2: PsicologÃ­a del EnvÃ­o */}
+                      <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-[#059669]">
+                          <Truck className="w-4 h-4" />
+                          <span>Pregunta 2: El dilema del envÃ­o</span>
+                        </div>
+                        <p className="text-base font-bold text-[#0F172A]">
+                          Vas a comprar exactamente los mismos audÃ­fonos. Â¿En cuÃ¡l de estas tiendas compras?
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          {[
+                            {
+                              id: "FREE_SHIPPING" as ShippingChoiceType,
+                              badge: "Tienda A",
+                              title: "$90.000 con Â¡ENVÃO GRATIS!",
+                              desc: "Un solo precio cerrado sin sorpresas.",
+                            },
+                            {
+                              id: "PRICE_PLUS_SHIPPING" as ShippingChoiceType,
+                              badge: "Tienda B",
+                              title: "$78.000 + $9.000 de envÃ­o",
+                              desc: "Producto mÃ¡s econÃ³mico por separado.",
+                            },
+                            {
+                              id: "CALCULATE_TOTAL" as ShippingChoiceType,
+                              badge: "Calculador",
+                              title: "Hago la cuenta: $78k + $9k = $87.000",
+                              desc: "Elijo la opciÃ³n mÃ¡s barata en total.",
+                            },
+                          ].map((opt) => (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => setShippingChoice(opt.id)}
+                              className={`w-full text-left p-3.5 rounded-xl border-2 text-sm font-bold transition-colors ${
+                                shippingChoice === opt.id
+                                  ? "bg-[#EFF6FF] border-[#2563EB] text-[#1E3A8A]"
+                                  : "bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded bg-white border border-[#CBD5E1] font-bold text-[#0F172A]">
+                                  {opt.badge}
+                                </span>
+                              </div>
+                              <div className="text-base font-bold text-[#0F172A]">
+                                {opt.title}
+                              </div>
+                              <div className="text-xs font-normal text-[#475569] mt-0.5">
+                                {opt.desc}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Pregunta 3: RetenciÃ³n */}
+                      <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-[#D97706]">
+                          <HeartHandshake className="w-4 h-4" />
+                          <span>Pregunta 3: RetenciÃ³n</span>
+                        </div>
+                        <p className="text-base font-bold text-[#0F172A]">
+                          Ya compraste y el producto te llegÃ³ sÃºper bien. Â¿QuÃ© te motivarÃ­a a volver a comprar en esa misma tienda?
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          {[
+                            {
+                              id: "GOOD_SERVICE" as ReturnReasonType,
+                              label: "Que la atenciÃ³n haya sido rÃ¡pida, confiable y amable.",
+                            },
+                            {
+                              id: "NEXT_DISCOUNT" as ReturnReasonType,
+                              label: "Un cupÃ³n de 15% de descuento para mi siguiente compra.",
+                            },
+                            {
+                              id: "WHATSAPP_UPDATES" as ReturnReasonType,
+                              label: "Que me avisen por WhatsApp cuando lleguen novedades que me gusten.",
+                            },
+                            {
+                              id: "CHEAPEST_ONLY" as ReturnReasonType,
+                              label: "Nada; la prÃ³xima vez busco de nuevo quiÃ©n lo tenga mÃ¡s barato.",
+                            },
+                          ].map((opt) => (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => setReturnReason(opt.id)}
+                              className={`w-full min-h-[48px] text-left p-3.5 rounded-xl border-2 text-sm font-bold transition-colors ${
+                                returnReason === opt.id
+                                  ? "bg-[#EFF6FF] border-[#2563EB] text-[#1E3A8A]"
+                                  : "bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={
+                          isSubmitting ||
+                          !trustSignal ||
+                          !shippingChoice ||
+                          !returnReason
+                        }
+                        className="w-full min-h-[52px] py-4 rounded-xl bg-[#059669] hover:bg-[#047857] disabled:opacity-40 text-white font-bold text-base border-2 border-[#0F172A] shadow-[4px_4px_0px_#0F172A]"
+                      >
+                        Enviar respuestas (+30 pts)
+                      </button>
+                    </form>
+                  )}
+                </motion.div>
+              )}
+
+              {/* FASE 4.5: PHASE_4_RESULTS */}
+              {state.current_phase === "PHASE_4_RESULTS" && (
+                <motion.div
+                  key="PHASE_4_RESULTS"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-4"
+                >
+                  <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 space-y-3 shadow-[6px_6px_0px_#059669]">
+                    <span className="text-xs font-bold text-[#059669]">
+                      PsicologÃ­a del consumidor
+                    </span>
+                    <h3 className="font-display text-2xl font-bold text-[#0F172A]">
+                      El poder de lo "GRATIS"
+                    </h3>
+                    <p className="text-sm text-[#334155] leading-relaxed">
+                      Mira la pantalla del proyector: descubre cuÃ¡ntas personas prefirieron pagar <strong>mÃ¡s caro</strong> solo por no ver el cobro de envÃ­o por separado, y por quÃ© retener a un cliente cuesta 5 veces menos.
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* FASE 5: FINAL_PODIUM */}
               {state.current_phase === "FINAL_PODIUM" && (
                 <motion.div
                   key="FINAL_PODIUM"

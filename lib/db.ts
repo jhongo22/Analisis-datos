@@ -8,6 +8,8 @@ export type PhaseType =
   | "PHASE_2_REVEAL"
   | "PHASE_3_SPEED"
   | "PHASE_3_RESULTS"
+  | "PHASE_4_JOURNEY"
+  | "PHASE_4_RESULTS"
   | "FINAL_PODIUM";
 
 export type FormBehaviorType = "FILL_PATIENTLY" | "ABANDON" | "PREFER_WHATSAPP";
@@ -22,6 +24,23 @@ export type CartAbandonType =
   | "SURPRISE_SHIPPING"
   | "NO_FAST_SUPPORT"
   | "TOO_MANY_STEPS";
+
+// Phase 4: "El viaje del cliente" (antes de comprar -> al pagar -> después)
+export type TrustSignalType =
+  | "REVIEWS"
+  | "FOLLOWERS"
+  | "WHATSAPP_CONTACT"
+  | "PRICE_ONLY";
+// Tienda A: $90.000 con envío gratis | Tienda B: $78.000 + $9.000 de envío ($87.000)
+export type ShippingChoiceType =
+  | "FREE_SHIPPING"
+  | "PRICE_PLUS_SHIPPING"
+  | "CALCULATE_TOTAL";
+export type ReturnReasonType =
+  | "NEXT_DISCOUNT"
+  | "WHATSAPP_UPDATES"
+  | "GOOD_SERVICE"
+  | "CHEAPEST_ONLY";
 
 export interface PresentationState {
   id: number;
@@ -42,8 +61,47 @@ export interface Participant {
   manager_decision: ManagerDecisionType | null;
   wait_tolerance: WaitToleranceType | null;
   cart_abandon_reason: CartAbandonType | null;
+  trust_signal: TrustSignalType | null;
+  shipping_choice: ShippingChoiceType | null;
+  return_reason: ReturnReasonType | null;
   score: number;
   created_at: number;
+}
+
+// Points: Phase 1 complete +20 | Phase 2 data-driven +100 (other +20)
+// Phase 3 complete +30 | Phase 4 complete +30
+function computeScore(p: {
+  tabs_open: number | null;
+  form_behavior: FormBehaviorType | null;
+  shopping_time: ShoppingTimeType | null;
+  manager_decision: ManagerDecisionType | null;
+  wait_tolerance: WaitToleranceType | null;
+  cart_abandon_reason: CartAbandonType | null;
+  trust_signal: TrustSignalType | null;
+  shipping_choice: ShippingChoiceType | null;
+  return_reason: ReturnReasonType | null;
+}): number {
+  let score = 0;
+  if (
+    p.tabs_open !== null &&
+    p.form_behavior !== null &&
+    p.shopping_time !== null
+  ) {
+    score += 20;
+  }
+  if (p.manager_decision === "FIX_FUNNEL_AUTOMATION") score += 100;
+  else if (p.manager_decision) score += 20;
+  if (p.wait_tolerance !== null && p.cart_abandon_reason !== null) {
+    score += 30;
+  }
+  if (
+    p.trust_signal !== null &&
+    p.shipping_choice !== null &&
+    p.return_reason !== null
+  ) {
+    score += 30;
+  }
+  return score;
 }
 
 function resolveDatabaseUrl(): string {
@@ -109,6 +167,9 @@ async function initSchema(client: Client) {
         manager_decision TEXT NULL,
         wait_tolerance TEXT NULL,
         cart_abandon_reason TEXT NULL,
+        trust_signal TEXT NULL,
+        shipping_choice TEXT NULL,
+        return_reason TEXT NULL,
         score INTEGER DEFAULT 0,
         created_at INTEGER
       )`,
@@ -134,6 +195,13 @@ async function initSchema(client: Client) {
     await client.execute(
       "ALTER TABLE participants ADD COLUMN cart_abandon_reason TEXT NULL"
     );
+  }
+  for (const col of ["trust_signal", "shipping_choice", "return_reason"]) {
+    if (!cols.includes(col)) {
+      await client.execute(
+        `ALTER TABLE participants ADD COLUMN ${col} TEXT NULL`
+      );
+    }
   }
 
   await client.execute({
@@ -215,6 +283,9 @@ export async function upsertParticipant(data: {
   manager_decision?: ManagerDecisionType | null;
   wait_tolerance?: WaitToleranceType | null;
   cart_abandon_reason?: CartAbandonType | null;
+  trust_signal?: TrustSignalType | null;
+  shipping_choice?: ShippingChoiceType | null;
+  return_reason?: ReturnReasonType | null;
 }): Promise<Participant> {
   const db = await getDb();
   const existing = (
@@ -224,40 +295,47 @@ export async function upsertParticipant(data: {
     })
   ).rows[0] as unknown as Participant | undefined;
 
+  // Use the incoming value when provided, otherwise keep the stored one (or null for new rows)
+  const pick = <K extends keyof Participant>(key: K): Participant[K] | null => {
+    const incoming = (data as Record<string, unknown>)[key as string];
+    if (incoming !== undefined) return incoming as Participant[K] | null;
+    return existing ? existing[key] ?? null : null;
+  };
+
+  const merged = {
+    tabs_open: pick("tabs_open"),
+    form_behavior: pick("form_behavior"),
+    shopping_time: pick("shopping_time"),
+    manager_decision: pick("manager_decision"),
+    wait_tolerance: pick("wait_tolerance"),
+    cart_abandon_reason: pick("cart_abandon_reason"),
+    trust_signal: pick("trust_signal"),
+    shipping_choice: pick("shipping_choice"),
+    return_reason: pick("return_reason"),
+  };
+  const score = computeScore(merged);
+
   if (!existing) {
     const nickname = (data.nickname || "Invitado").trim().slice(0, 28);
     const avatar = data.avatar || "fox";
-    const tabsOpen = data.tabs_open !== undefined ? data.tabs_open : null;
-    const formBehavior = data.form_behavior ?? null;
-    const shoppingTime = data.shopping_time ?? null;
-    const managerDecision = data.manager_decision ?? null;
-    const waitTolerance = data.wait_tolerance ?? null;
-    const cartAbandon = data.cart_abandon_reason ?? null;
-
-    let score = 0;
-    if (tabsOpen !== null && formBehavior !== null && shoppingTime !== null) {
-      score += 20;
-    }
-    if (managerDecision === "FIX_FUNNEL_AUTOMATION") score += 100;
-    else if (managerDecision) score += 20;
-    if (waitTolerance !== null && cartAbandon !== null) {
-      score += 30;
-    }
 
     await db.execute({
       sql: `INSERT INTO participants (
-        id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, score, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, trust_signal, shipping_choice, return_reason, score, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         data.id,
         nickname,
         avatar,
-        tabsOpen,
-        formBehavior,
-        shoppingTime,
-        managerDecision,
-        waitTolerance,
-        cartAbandon,
+        merged.tabs_open,
+        merged.form_behavior,
+        merged.shopping_time,
+        merged.manager_decision,
+        merged.wait_tolerance,
+        merged.cart_abandon_reason,
+        merged.trust_signal,
+        merged.shipping_choice,
+        merged.return_reason,
         score,
         Date.now(),
       ],
@@ -269,38 +347,6 @@ export async function upsertParticipant(data: {
         : existing.nickname;
     const avatar =
       data.avatar !== undefined ? data.avatar : existing.avatar || "fox";
-    const tabsOpen =
-      data.tabs_open !== undefined ? data.tabs_open : existing.tabs_open;
-    const formBehavior =
-      data.form_behavior !== undefined
-        ? data.form_behavior
-        : existing.form_behavior;
-    const shoppingTime =
-      data.shopping_time !== undefined
-        ? data.shopping_time
-        : existing.shopping_time;
-    const managerDecision =
-      data.manager_decision !== undefined
-        ? data.manager_decision
-        : existing.manager_decision;
-    const waitTolerance =
-      data.wait_tolerance !== undefined
-        ? data.wait_tolerance
-        : existing.wait_tolerance;
-    const cartAbandon =
-      data.cart_abandon_reason !== undefined
-        ? data.cart_abandon_reason
-        : existing.cart_abandon_reason;
-
-    let score = 0;
-    if (tabsOpen !== null && formBehavior !== null && shoppingTime !== null) {
-      score += 20;
-    }
-    if (managerDecision === "FIX_FUNNEL_AUTOMATION") score += 100;
-    else if (managerDecision) score += 20;
-    if (waitTolerance !== null && cartAbandon !== null) {
-      score += 30;
-    }
 
     await db.execute({
       sql: `UPDATE participants
@@ -312,17 +358,23 @@ export async function upsertParticipant(data: {
                 manager_decision = ?,
                 wait_tolerance = ?,
                 cart_abandon_reason = ?,
+                trust_signal = ?,
+                shipping_choice = ?,
+                return_reason = ?,
                 score = ?
             WHERE id = ?`,
       args: [
         nickname,
         avatar,
-        tabsOpen,
-        formBehavior,
-        shoppingTime,
-        managerDecision,
-        waitTolerance,
-        cartAbandon,
+        merged.tabs_open,
+        merged.form_behavior,
+        merged.shopping_time,
+        merged.manager_decision,
+        merged.wait_tolerance,
+        merged.cart_abandon_reason,
+        merged.trust_signal,
+        merged.shipping_choice,
+        merged.return_reason,
         score,
         data.id,
       ],
@@ -341,7 +393,6 @@ export async function upsertParticipant(data: {
     })
   ).rows[0] as unknown as Participant;
 }
-
 export async function seedSimulatedParticipants(): Promise<void> {
   const db = await getDb();
   const avatars = [
@@ -357,21 +408,27 @@ export async function seedSimulatedParticipants(): Promise<void> {
 
   const demoProfiles: Array<{
     nickname: string;
-    tabs_open: number;
+    tabs_open: number; // gasto mensual en miles de pesos
     form_behavior: FormBehaviorType;
     shopping_time: ShoppingTimeType;
     manager_decision: ManagerDecisionType;
     wait_tolerance: WaitToleranceType;
     cart_abandon_reason: CartAbandonType;
+    trust_signal: TrustSignalType;
+    shipping_choice: ShippingChoiceType;
+    return_reason: ReturnReasonType;
   }> = [
     {
-      nickname: "Carlos (9999)",
-      tabs_open: 9999,
+      nickname: "Carlos (50000)",
+      tabs_open: 50000,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "FOLLOWERS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "CHEAPEST_ONLY",
     },
     {
       nickname: "Andrés (-10)",
@@ -381,225 +438,296 @@ export async function seedSimulatedParticipants(): Promise<void> {
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "PRICE_ONLY",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Valentina G.",
-      tabs_open: 14,
+      tabs_open: 140,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Mateo R.",
-      tabs_open: 8,
+      tabs_open: 80,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_1_HOUR",
       cart_abandon_reason: "SURPRISE_SHIPPING",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Camila M.",
-      tabs_open: 22,
+      tabs_open: 220,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "CALCULATE_TOTAL",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Sebastián L.",
-      tabs_open: 11,
+      tabs_open: 110,
       form_behavior: "ABANDON",
       shopping_time: "AFTERNOON",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "WHATSAPP_UPDATES",
     },
     {
       nickname: "Laura P.",
-      tabs_open: 19,
+      tabs_open: 190,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "PRICE_PLUS_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Daniel V.",
-      tabs_open: 34,
+      tabs_open: 340,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_1_HOUR",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "FOLLOWERS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "CHEAPEST_ONLY",
     },
     {
       nickname: "Natalia S.",
-      tabs_open: 6,
+      tabs_open: 60,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "MORNING",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "SURPRISE_SHIPPING",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Alejandro T.",
-      tabs_open: 12,
+      tabs_open: 120,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "PRICE_ONLY",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Sofía C.",
-      tabs_open: 27,
+      tabs_open: 270,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "REVIEWS",
+      shipping_choice: "CALCULATE_TOTAL",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Daniela B.",
-      tabs_open: 9,
+      tabs_open: 90,
       form_behavior: "FILL_PATIENTLY",
       shopping_time: "AFTERNOON",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_24_HOURS",
       cart_abandon_reason: "SURPRISE_SHIPPING",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Felipe H.",
-      tabs_open: 15,
+      tabs_open: 150,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Juliana K.",
-      tabs_open: 7,
+      tabs_open: 70,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "FOLLOWERS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "WHATSAPP_UPDATES",
     },
     {
       nickname: "Nicolás D.",
-      tabs_open: 18,
+      tabs_open: 180,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_1_HOUR",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "REVIEWS",
+      shipping_choice: "PRICE_PLUS_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Mariana F.",
-      tabs_open: 10,
+      tabs_open: 100,
       form_behavior: "ABANDON",
       shopping_time: "AFTERNOON",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Santiago Z.",
-      tabs_open: 24,
+      tabs_open: 240,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Paula A.",
-      tabs_open: 13,
+      tabs_open: 130,
       form_behavior: "FILL_PATIENTLY",
       shopping_time: "MORNING",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_1_HOUR",
       cart_abandon_reason: "SURPRISE_SHIPPING",
+      trust_signal: "REVIEWS",
+      shipping_choice: "CALCULATE_TOTAL",
+      return_reason: "WHATSAPP_UPDATES",
     },
     {
       nickname: "Juan Pablo",
-      tabs_open: 5,
+      tabs_open: 50,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "PRICE_ONLY",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "CHEAPEST_ONLY",
     },
     {
       nickname: "Gabriela M.",
-      tabs_open: 16,
+      tabs_open: 160,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Esteban Q.",
-      tabs_open: 21,
+      tabs_open: 210,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
     {
       nickname: "Manuela W.",
-      tabs_open: 8,
+      tabs_open: 80,
       form_behavior: "ABANDON",
       shopping_time: "AFTERNOON",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_1_HOUR",
       cart_abandon_reason: "SURPRISE_SHIPPING",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Ricardo E.",
-      tabs_open: 17,
+      tabs_open: 170,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "NIGHT",
       manager_decision: "MORE_ADS",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "FOLLOWERS",
+      shipping_choice: "PRICE_PLUS_SHIPPING",
+      return_reason: "WHATSAPP_UPDATES",
     },
     {
       nickname: "Diana N.",
-      tabs_open: 11,
+      tabs_open: 110,
       form_behavior: "PREFER_WHATSAPP",
       shopping_time: "MORNING",
       manager_decision: "LOWER_PRICE",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "TOO_MANY_STEPS",
+      trust_signal: "REVIEWS",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "NEXT_DISCOUNT",
     },
     {
       nickname: "Tomás G.",
-      tabs_open: 29,
+      tabs_open: 290,
       form_behavior: "ABANDON",
       shopping_time: "NIGHT",
       manager_decision: "FIX_FUNNEL_AUTOMATION",
       wait_tolerance: "WAIT_5_MIN",
       cart_abandon_reason: "NO_FAST_SUPPORT",
+      trust_signal: "WHATSAPP_CONTACT",
+      shipping_choice: "FREE_SHIPPING",
+      return_reason: "GOOD_SERVICE",
     },
   ];
 
   const now = Date.now();
   const statements: InStatement[] = demoProfiles.map((profile, idx) => {
-    const score =
-      profile.manager_decision === "FIX_FUNNEL_AUTOMATION" ? 150 : 70;
+    const score = computeScore(profile);
     const avatar = avatars[idx % avatars.length];
     return {
       sql: `INSERT OR REPLACE INTO participants (
-        id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, score, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, trust_signal, shipping_choice, return_reason, score, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         `seed-user-${idx + 1}`,
         profile.nickname,
@@ -610,6 +738,9 @@ export async function seedSimulatedParticipants(): Promise<void> {
         profile.manager_decision,
         profile.wait_tolerance,
         profile.cart_abandon_reason,
+        profile.trust_signal,
+        profile.shipping_choice,
+        profile.return_reason,
         score,
         now - (25 - idx) * 1500,
       ],
@@ -623,7 +754,6 @@ export async function seedSimulatedParticipants(): Promise<void> {
 
   await db.batch(statements, "write");
 }
-
 export async function resetAllData(): Promise<void> {
   const db = await getDb();
   await db.batch(

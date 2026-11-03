@@ -16,6 +16,9 @@ export async function POST(request: Request) {
       manager_decision,
       wait_tolerance,
       cart_abandon_reason,
+      trust_signal,
+      shipping_choice,
+      return_reason,
     } = body;
 
     if (!id || typeof id !== "string") {
@@ -38,6 +41,9 @@ export async function POST(request: Request) {
       manager_decision,
       wait_tolerance,
       cart_abandon_reason,
+      trust_signal,
+      shipping_choice,
+      return_reason,
     });
 
     const syncData = await getFullSyncData();

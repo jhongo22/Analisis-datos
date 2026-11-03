@@ -16,10 +16,12 @@ export const PHASES_ORDER: PhaseType[] = [
   "LOBBY",
   "PHASE_1_SURVEY",
   "PHASE_1_RESULTS",
-  "PHASE_2_SIMULATOR",
-  "PHASE_2_REVEAL",
   "PHASE_3_SPEED",
   "PHASE_3_RESULTS",
+  "PHASE_4_JOURNEY",
+  "PHASE_4_RESULTS",
+  "PHASE_2_SIMULATOR",
+  "PHASE_2_REVEAL",
   "FINAL_PODIUM",
 ];
 
@@ -27,11 +29,13 @@ export const PHASE_LABELS: Record<PhaseType, string> = {
   LOBBY: "0. Bienvenida y QR",
   PHASE_1_SURVEY: "1. Hábitos del salón",
   PHASE_1_RESULTS: "1.5. Dashboard de hábitos",
-  PHASE_2_SIMULATOR: "2. Simulador de gerente",
-  PHASE_2_REVEAL: "2.5. Resultados del simulador",
-  PHASE_3_SPEED: "3. Prueba de paciencia",
-  PHASE_3_RESULTS: "3.5. Costo de la lentitud",
-  FINAL_PODIUM: "4. Podio y conclusiones",
+  PHASE_3_SPEED: "2. Prueba de paciencia",
+  PHASE_3_RESULTS: "2.5. Costo de la lentitud",
+  PHASE_4_JOURNEY: "3. Psicología y retención",
+  PHASE_4_RESULTS: "3.5. El poder de lo gratis",
+  PHASE_2_SIMULATOR: "4. El reto del gerente",
+  PHASE_2_REVEAL: "4.5. Decisión con datos",
+  FINAL_PODIUM: "5. Podio y conclusiones",
 };
 
 const DEFAULT_STATE: PresentationState = {

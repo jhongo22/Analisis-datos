@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -10,7 +10,12 @@ import {
   PHASE_LABELS,
 } from "@/hooks/useExpoSync";
 import { ParticipantAvatar } from "@/components/Avatars";
-import type { PhaseType } from "@/lib/db";
+import type {
+  PhaseType,
+  TrustSignalType,
+  ShippingChoiceType,
+  ReturnReasonType,
+} from "@/lib/db";
 import {
   Users,
   AlertTriangle,
@@ -32,12 +37,33 @@ import {
   ArrowLeft,
   Zap,
   ShoppingCart,
+  Truck,
+  ShieldCheck,
+  HeartHandshake,
+  Sparkles,
+  CheckCircle2,
 } from "lucide-react";
-
 function formatNumber(n: number): string {
   if (!Number.isFinite(n) || n === 0) return "0";
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+// Pregunta 1 = gasto mensual en compras por internet, en MILES de pesos.
+// Se guarda en la columna `tabs_open` para no migrar la base de datos.
+const MAX_MONTHLY_SPEND = 2000; // > $2.000.000 al mes se considera dato exagerado
+const VISITORS_WHO_LEFT = 620; // personas que cerraron la web por el formulario (Prueba 2)
+
+// 150 -> "$150 mil" ; 1250 -> "$1,3 millones" ; 620*150 -> "$93 millones"
+function formatMiles(thousands: number): string {
+  if (!Number.isFinite(thousands) || thousands === 0) return "$0";
+  if (Math.abs(thousands) >= 1000) {
+    const millions = Math.round((thousands / 1000) * 10) / 10;
+    return `$${millions.toLocaleString("es-CO")} ${
+      millions === 1 ? "millón" : "millones"
+    }`;
+  }
+  return `$${Math.round(thousands).toLocaleString("es-CO")} mil`;
 }
 
 export default function PresenterPage() {
@@ -106,11 +132,11 @@ export default function PresenterPage() {
     );
 
     const outliers = withTabs.filter(
-      (p) => Number(p.tabs_open) < 0 || Number(p.tabs_open) > 80
+      (p) => Number(p.tabs_open) < 0 || Number(p.tabs_open) > MAX_MONTHLY_SPEND
     );
 
     const cleanTabsList = withTabs.filter(
-      (p) => Number(p.tabs_open) >= 0 && Number(p.tabs_open) <= 80
+      (p) => Number(p.tabs_open) >= 0 && Number(p.tabs_open) <= MAX_MONTHLY_SPEND
     );
 
     const rawAvgTabs =
@@ -119,7 +145,7 @@ export default function PresenterPage() {
           withTabs.length
         : 0;
 
-    // If all entries are outliers (>80), fallback to rawAvgTabs until more realistic votes arrive
+    // If all entries are outliers (> MAX_MONTHLY_SPEND), the clean average stays at 0 until realistic answers arrive
     const cleanAvgTabs =
       cleanTabsList.length > 0
         ? cleanTabsList.reduce((acc, p) => acc + Number(p.tabs_open), 0) /
@@ -128,6 +154,16 @@ export default function PresenterPage() {
 
     const activeAvgTabs =
       state.clean_outliers === 1 ? cleanAvgTabs : rawAvgTabs;
+
+    // Highest realistic answer, used to scale the per-person bars
+    const maxCleanSpend = Math.max(
+      1,
+      ...cleanTabsList.map((p) => Number(p.tabs_open))
+    );
+
+    // Money the store lost: people who closed the web x average spend of the room
+    const lostMoneyRaw = VISITORS_WHO_LEFT * rawAvgTabs;
+    const lostMoneyClean = VISITORS_WHO_LEFT * cleanAvgTabs;
 
     const formCounts = {
       FILL_PATIENTLY: participants.filter(
@@ -201,6 +237,72 @@ export default function PresenterPage() {
       (p) => p.wait_tolerance !== null && p.cart_abandon_reason !== null
     ).length;
 
+    // Phase 4 Customer Journey & Psychology counts
+    const trustCounts = {
+      REVIEWS: participants.filter((p) => p.trust_signal === "REVIEWS").length,
+      WHATSAPP_CONTACT: participants.filter(
+        (p) => p.trust_signal === "WHATSAPP_CONTACT"
+      ).length,
+      FOLLOWERS: participants.filter((p) => p.trust_signal === "FOLLOWERS")
+        .length,
+      PRICE_ONLY: participants.filter((p) => p.trust_signal === "PRICE_ONLY")
+        .length,
+    };
+    const totalTrustVotes =
+      trustCounts.REVIEWS +
+      trustCounts.WHATSAPP_CONTACT +
+      trustCounts.FOLLOWERS +
+      trustCounts.PRICE_ONLY;
+
+    const shippingCounts = {
+      FREE_SHIPPING: participants.filter(
+        (p) => p.shipping_choice === "FREE_SHIPPING"
+      ).length,
+      PRICE_PLUS_SHIPPING: participants.filter(
+        (p) => p.shipping_choice === "PRICE_PLUS_SHIPPING"
+      ).length,
+      CALCULATE_TOTAL: participants.filter(
+        (p) => p.shipping_choice === "CALCULATE_TOTAL"
+      ).length,
+    };
+    const totalShippingVotes =
+      shippingCounts.FREE_SHIPPING +
+      shippingCounts.PRICE_PLUS_SHIPPING +
+      shippingCounts.CALCULATE_TOTAL;
+    const overpaidCount = shippingCounts.FREE_SHIPPING;
+    const overpaidMoneyTotal = overpaidCount * 3000;
+    const overpaidPct =
+      totalShippingVotes > 0
+        ? Math.round((overpaidCount / totalShippingVotes) * 100)
+        : 0;
+
+    const returnCounts = {
+      GOOD_SERVICE: participants.filter(
+        (p) => p.return_reason === "GOOD_SERVICE"
+      ).length,
+      NEXT_DISCOUNT: participants.filter(
+        (p) => p.return_reason === "NEXT_DISCOUNT"
+      ).length,
+      WHATSAPP_UPDATES: participants.filter(
+        (p) => p.return_reason === "WHATSAPP_UPDATES"
+      ).length,
+      CHEAPEST_ONLY: participants.filter(
+        (p) => p.return_reason === "CHEAPEST_ONLY"
+      ).length,
+    };
+    const totalReturnVotes =
+      returnCounts.GOOD_SERVICE +
+      returnCounts.NEXT_DISCOUNT +
+      returnCounts.WHATSAPP_UPDATES +
+      returnCounts.CHEAPEST_ONLY;
+
+    const completedPhase4Count = participants.filter(
+      (p) =>
+        p.trust_signal !== null &&
+        p.shipping_choice !== null &&
+        p.return_reason !== null
+    ).length;
+
     const dataDrivenWinners = participants
       .filter((p) => p.manager_decision === "FIX_FUNNEL_AUTOMATION")
       .sort((a, b) => b.score - a.score);
@@ -218,6 +320,9 @@ export default function PresenterPage() {
       rawAvgTabs,
       cleanAvgTabs,
       activeAvgTabs,
+      maxCleanSpend,
+      lostMoneyRaw,
+      lostMoneyClean,
       formCounts,
       totalFormVotes,
       timeCounts,
@@ -229,6 +334,16 @@ export default function PresenterPage() {
       abandonCounts,
       totalAbandonVotes,
       completedPhase3Count,
+      trustCounts,
+      totalTrustVotes,
+      shippingCounts,
+      totalShippingVotes,
+      overpaidCount,
+      overpaidMoneyTotal,
+      overpaidPct,
+      returnCounts,
+      totalReturnVotes,
+      completedPhase4Count,
       dataDrivenWinners,
       individualTabs,
     };
@@ -450,14 +565,18 @@ export default function PresenterPage() {
                     : idx === 2
                     ? "1.5 Dashboard"
                     : idx === 3
-                    ? "2. Gerente"
+                    ? "2. Paciencia"
                     : idx === 4
-                    ? "2.5 Verdad"
+                    ? "2.5 Lentitud"
                     : idx === 5
-                    ? "3. Paciencia"
+                    ? "3. Psicología"
                     : idx === 6
-                    ? "3.5 Lentitud"
-                    : "4. Podio"}
+                    ? "3.5 Envío Gratis"
+                    : idx === 7
+                    ? "4. Gerente"
+                    : idx === 8
+                    ? "4.5 Verdad"
+                    : "5. Podio"}
                 </button>
               );
             })}
@@ -693,7 +812,7 @@ export default function PresenterPage() {
                       <span>Pregunta 1</span>
                     </div>
                     <p className="text-[#0F172A] font-bold text-lg">
-                      ¿Cuántas pestañas o apps tienes abiertas ahora?
+                      ¿Cuánto gastas al mes en compras por internet?
                     </p>
                   </div>
 
@@ -752,10 +871,10 @@ export default function PresenterPage() {
                     >
                       {state.clean_outliers === 0
                         ? "Datos sin revisar"
-                        : "Datos limpios (de 0 a 80)"}
+                        : "Datos limpios (hasta $2 millones)"}
                     </span>
                     <h3 className="font-display text-xl font-bold text-[#0F172A] mt-0.5">
-                      Promedio de pestañas abiertas
+                      Gasto mensual promedio del salón
                     </h3>
                   </div>
 
@@ -782,17 +901,17 @@ export default function PresenterPage() {
                       key={formatNumber(analytics.activeAvgTabs)}
                       initial={{ scale: 0.9, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
-                      className={`font-display text-6xl font-bold tracking-tight ${
+                      className={`font-display text-5xl font-bold tracking-tight ${
                         state.clean_outliers === 0 &&
                         analytics.outliers.length > 0
                           ? "text-[#DC2626]"
                           : "text-[#059669]"
                       }`}
                     >
-                      {formatNumber(analytics.activeAvgTabs)}
+                      {formatMiles(analytics.activeAvgTabs)}
                     </motion.div>
                     <div className="text-sm font-bold text-[#475569]">
-                      pestañas
+                      al mes
                     </div>
                   </div>
 
@@ -808,12 +927,12 @@ export default function PresenterPage() {
                       ) : (
                         analytics.individualTabs.map((p) => {
                           const val = Number(p.tabs_open) || 0;
-                          const isOutlier = val < 0 || val > 80;
+                          const isOutlier = val < 0 || val > MAX_MONTHLY_SPEND;
                           const maxScale =
                             state.clean_outliers === 0 &&
                             analytics.outliers.length > 0
-                              ? 100
-                              : 45;
+                              ? Math.max(1, ...analytics.individualTabs.map((x) => Number(x.tabs_open) || 0))
+                              : analytics.maxCleanSpend;
                           const heightPct = isOutlier
                             ? 100
                             : Math.max(
@@ -824,7 +943,7 @@ export default function PresenterPage() {
                             <div
                               key={p.id}
                               className="flex-1 flex flex-col items-center justify-end h-full"
-                              title={`${p.nickname}: ${val}`}
+                              title={`${p.nickname}: ${formatMiles(val)}`}
                             >
                               <div
                                 className={`w-full rounded-t transition-all duration-500 ${
@@ -852,14 +971,14 @@ export default function PresenterPage() {
                     <span className="truncate">
                       {state.clean_outliers === 0
                         ? `Dato exagerado: ${analytics.outliers
-                            .map((o) => `${o.nickname} (${o.tabs_open})`)
+                            .map((o) => `${o.nickname} (${formatMiles(Number(o.tabs_open))})`)
                             .join(", ")}`
-                        : `Se quitaron ${analytics.outliers.length} respuestas exageradas (> 80).`}
+                        : `Se quitaron ${analytics.outliers.length} respuestas exageradas (más de $2 millones o negativas).`}
                     </span>
                   </div>
                 ) : (
                   <div className="rounded-xl px-3.5 py-2 bg-[#F8FAFC] border border-[#CBD5E1] text-xs font-semibold text-[#475569]">
-                    Todos los datos están en rango normal (0 a 80).
+                    Todos los datos están en rango normal ($0 a $2 millones).
                   </div>
                 )}
               </div>
@@ -881,17 +1000,17 @@ export default function PresenterPage() {
                       Promedio sin limpiar
                     </span>
                     <span className="font-display text-4xl font-bold text-[#DC2626]">
-                      {formatNumber(analytics.rawAvgTabs)}
+                      {formatMiles(analytics.rawAvgTabs)}
                     </span>
                   </div>
 
                   <div className="rounded-xl bg-[#ECFDF5] border-2 border-[#6EE7B7] p-3.5 text-center">
                     <span className="text-xs font-bold text-[#065F46] block mb-1">
-                      Promedio limpio (0-80)
+                      Promedio limpio
                     </span>
                     <span className="font-display text-4xl font-bold text-[#059669]">
                       {analytics.cleanTabsCount > 0
-                        ? formatNumber(analytics.cleanAvgTabs)
+                        ? formatMiles(analytics.cleanAvgTabs)
                         : "—"}
                     </span>
                   </div>
@@ -899,7 +1018,7 @@ export default function PresenterPage() {
 
                 <div className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs font-semibold text-[#334155] text-center">
                   {analytics.cleanTabsCount === 0 && analytics.withTabsCount > 0
-                    ? "Nota: Todos pusieron más de 80 pestañas (0 datos válidos entre 0 y 80)."
+                    ? "Nota: Todos pusieron más de $2 millones al mes (0 datos válidos)."
                     : "Limpiar datos antes de decidir evita errores millonarios."}
                 </div>
               </div>
@@ -991,7 +1110,7 @@ export default function PresenterPage() {
               <div className="lg:col-span-7 rounded-3xl bg-white border-4 border-[#0F172A] p-6 shadow-[8px_8px_0px_#0F172A] flex flex-col justify-between space-y-4">
                 <div>
                   <span className="inline-block text-xs font-bold px-3 py-1 rounded-md bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] mb-1">
-                    Prueba 2 • Caso real
+                    Prueba 4 • El gran reto del gerente
                   </span>
                   <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#0F172A]">
                     Simulador: Tú eres el gerente
@@ -1273,6 +1392,16 @@ export default function PresenterPage() {
                     Se aburrían al ver el formulario obligatorio de 10 preguntas
                     antes de hablar por WhatsApp.
                   </p>
+                  {analytics.cleanTabsCount > 0 && (
+                    <p className="text-sm text-[#991B1B] bg-[#FEF2F2] border border-[#FECACA] rounded-lg px-3 py-2">
+                      Si cada uno gasta como el promedio del salón (
+                      {formatMiles(analytics.cleanAvgTabs)}), son{" "}
+                      <strong className="font-display text-lg">
+                        {formatMiles(analytics.lostMoneyClean)}
+                      </strong>{" "}
+                      al mes que se fueron a la competencia.
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-5 shadow-[5px_5px_0px_#059669] space-y-2">
@@ -1304,7 +1433,7 @@ export default function PresenterPage() {
             >
               <div className="text-center space-y-1">
                 <p className="text-sm font-bold text-[#2563EB]">
-                  Prueba 3 • Velocidad y fugas de dinero
+                  Prueba 2 • Velocidad y fugas de dinero
                 </p>
                 <h2 className="font-display text-4xl sm:text-5xl font-bold text-[#0F172A]">
                   ¿Cuánto espera un cliente antes de irse?
@@ -1538,7 +1667,366 @@ export default function PresenterPage() {
           )}
 
           {/* =========================================================
-              FASE 4: FINAL_PODIUM ("Conclusión y Cuadro de Honor")
+              FASE 4 (NEW): PHASE_4_JOURNEY ("Psicología y Retención")
+          ========================================================= */}
+          {state.current_phase === "PHASE_4_JOURNEY" && (
+            <motion.div
+              key="PHASE_4_JOURNEY"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="max-w-5xl mx-auto w-full space-y-6"
+            >
+              <div className="text-center space-y-1">
+                <p className="text-sm font-bold text-[#2563EB]">
+                  Prueba 3 • Psicología del consumidor y retención
+                </p>
+                <h2 className="font-display text-4xl sm:text-5xl font-bold text-[#0F172A]">
+                  ¿Cómo decidimos realmente al comprar?
+                </h2>
+              </div>
+
+              <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 sm:p-8 shadow-[8px_8px_0px_#0F172A]">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div>
+                    <p className="text-sm font-semibold text-[#475569]">
+                      Respuestas en vivo
+                    </p>
+                    <div className="font-display text-4xl sm:text-5xl font-bold text-[#0F172A]">
+                      {analytics.completedPhase4Count} de {analytics.total}
+                    </div>
+                  </div>
+                  <span className="font-display text-5xl sm:text-6xl font-bold text-[#059669]">
+                    {analytics.total > 0
+                      ? Math.round(
+                          (analytics.completedPhase4Count / analytics.total) *
+                            100
+                        )
+                      : 0}
+                    %
+                  </span>
+                </div>
+
+                <div className="w-full h-5 bg-[#F1F5F9] rounded-xl overflow-hidden border-2 border-[#0F172A] mb-6">
+                  <div
+                    className="h-full bg-[#059669] origin-left transition-transform duration-500"
+                    style={{
+                      transform: `scaleX(${
+                        analytics.total > 0
+                          ? Math.min(
+                              1,
+                              analytics.completedPhase4Count / analytics.total
+                            )
+                          : 0
+                      })`,
+                    }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="rounded-2xl bg-[#F8FAFC] border-2 border-[#CBD5E1] p-5">
+                    <div className="flex items-center gap-2 text-[#2563EB] font-bold text-sm mb-1.5">
+                      <ShieldCheck className="w-5 h-5" />
+                      <span>Pregunta 1: Confianza</span>
+                    </div>
+                    <p className="text-[#0F172A] font-bold text-lg">
+                      ¿Qué buscas primero para confiar en una tienda que no conoces?
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-[#F8FAFC] border-2 border-[#CBD5E1] p-5">
+                    <div className="flex items-center gap-2 text-[#059669] font-bold text-sm mb-1.5">
+                      <Truck className="w-5 h-5" />
+                      <span>Pregunta 2: El dilema</span>
+                    </div>
+                    <p className="text-[#0F172A] font-bold text-lg">
+                      $90.000 con envío gratis vs $78.000 + $9.000 de envío. ¿Cuál compras?
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-[#F8FAFC] border-2 border-[#CBD5E1] p-5">
+                    <div className="flex items-center gap-2 text-[#D97706] font-bold text-sm mb-1.5">
+                      <HeartHandshake className="w-5 h-5" />
+                      <span>Pregunta 3: Retención</span>
+                    </div>
+                    <p className="text-[#0F172A] font-bold text-lg">
+                      Si el producto te llegó bien, ¿qué te hace volver a comprar?
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* =========================================================
+              FASE 4.5 (NEW): PHASE_4_RESULTS ("El Poder de lo Gratis")
+          ========================================================= */}
+          {state.current_phase === "PHASE_4_RESULTS" && (
+            <motion.div
+              key="PHASE_4_RESULTS"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch"
+            >
+              {/* Left Hero (7 cols): La Trampa del Envío Gratis */}
+              <div className="lg:col-span-7 rounded-2xl bg-white border-2 border-[#0F172A] p-5 shadow-[6px_6px_0px_#059669] flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="text-xs font-bold text-[#059669]">
+                        Psicología económica en vivo
+                      </span>
+                      <h3 className="font-display text-2xl font-bold text-[#0F172A]">
+                        La trampa del "Envío Gratis"
+                      </h3>
+                    </div>
+                    <Truck className="w-7 h-7 text-[#059669]" />
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#FEF2F2] border-2 border-[#FECACA] my-3">
+                    <div className="flex items-center gap-3">
+                      <div className="font-display text-4xl sm:text-5xl font-bold text-[#DC2626] shrink-0">
+                        {analytics.overpaidPct}%
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[#991B1B]">
+                          del salón prefirió pagar MÁS CARO por la palabra "GRATIS"
+                        </p>
+                        <p className="text-xs text-[#7F1D1D] mt-0.5">
+                          Tienda A ($90.000) era $3.000 más costosa que Tienda B ($78.000 + $9.000 = $87.000).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Visual Option Comparison */}
+                  <div className="space-y-3 pt-1">
+                    {[
+                      {
+                        key: "FREE_SHIPPING",
+                        title: "Tienda A: $90.000 con Envío Gratis",
+                        sub: "Total a pagar: $90.000 (Más costoso)",
+                        votes: analytics.shippingCounts.FREE_SHIPPING,
+                        barColor: "bg-[#DC2626]",
+                        badge: "bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]",
+                        isTrick: true,
+                      },
+                      {
+                        key: "PRICE_PLUS_SHIPPING",
+                        title: "Tienda B: $78.000 + $9.000 envío",
+                        sub: "Total a pagar: $87.000 (Ahorro de $3.000)",
+                        votes: analytics.shippingCounts.PRICE_PLUS_SHIPPING,
+                        barColor: "bg-[#2563EB]",
+                        badge: "bg-[#EFF6FF] text-[#1E40AF] border-[#BFDBFE]",
+                        isTrick: false,
+                      },
+                      {
+                        key: "CALCULATE_TOTAL",
+                        title: "Hizo la cuenta mental ($87k vs $90k)",
+                        sub: "Comparó el precio final completo",
+                        votes: analytics.shippingCounts.CALCULATE_TOTAL,
+                        barColor: "bg-[#059669]",
+                        badge: "bg-[#ECFDF5] text-[#065F46] border-[#6EE7B7]",
+                        isTrick: false,
+                      },
+                    ].map((opt) => {
+                      const pct =
+                        analytics.totalShippingVotes > 0
+                          ? Math.round(
+                              (opt.votes / analytics.totalShippingVotes) * 100
+                            )
+                          : 0;
+                      return (
+                        <div
+                          key={opt.key}
+                          className="p-3 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1]"
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                            <div>
+                              <span className="text-sm font-bold text-[#0F172A]">
+                                {opt.title}
+                              </span>
+                              <div className="text-xs text-[#475569]">
+                                {opt.sub}
+                              </div>
+                            </div>
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded border ${opt.badge}`}
+                            >
+                              {opt.votes} ({pct}%)
+                            </span>
+                          </div>
+                          <div className="w-full h-3.5 bg-white rounded-md overflow-hidden border border-[#CBD5E1] mt-1.5">
+                            <div
+                              className={`h-full ${opt.barColor} origin-left transition-transform duration-500`}
+                              style={{ transform: `scaleX(${pct / 100})` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-4 p-3.5 rounded-xl bg-[#ECFDF5] border border-[#6EE7B7] text-xs font-semibold text-[#065F46] flex items-center justify-between gap-3">
+                  <span>
+                    💡 <strong>Lección de negocio:</strong> El consumidor odia pagar por transporte. Si incluyes el envío en el precio, vendes más aunque cobres más.
+                  </span>
+                  {analytics.overpaidCount > 0 && (
+                    <span className="shrink-0 font-bold bg-white px-2.5 py-1 rounded-lg border border-[#A7F3D0]">
+                      +${formatNumber(analytics.overpaidMoneyTotal)} pagados de más
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Side (5 cols): Confianza + Retención */}
+              <div className="lg:col-span-5 flex flex-col justify-between gap-4">
+                {/* Confianza previa */}
+                <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 shadow-[5px_5px_0px_#0F172A]">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-display text-base font-bold text-[#0F172A]">
+                      ¿Qué da confianza en una tienda nueva?
+                    </h4>
+                    <ShieldCheck className="w-5 h-5 text-[#2563EB]" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      {
+                        key: "REVIEWS",
+                        label: "Reseñas y fotos de clientes",
+                        count: analytics.trustCounts.REVIEWS,
+                        color: "bg-[#2563EB]",
+                      },
+                      {
+                        key: "WHATSAPP_CONTACT",
+                        label: "Botón de WhatsApp directo",
+                        count: analytics.trustCounts.WHATSAPP_CONTACT,
+                        color: "bg-[#059669]",
+                      },
+                      {
+                        key: "FOLLOWERS",
+                        label: "Muchos seguidores en redes",
+                        count: analytics.trustCounts.FOLLOWERS,
+                        color: "bg-[#D97706]",
+                      },
+                      {
+                        key: "PRICE_ONLY",
+                        label: "Solo si es muy barato",
+                        count: analytics.trustCounts.PRICE_ONLY,
+                        color: "bg-[#DC2626]",
+                      },
+                    ].map((item) => {
+                      const pct =
+                        analytics.totalTrustVotes > 0
+                          ? Math.round(
+                              (item.count / analytics.totalTrustVotes) * 100
+                            )
+                          : 0;
+                      return (
+                        <div key={item.key} className="space-y-0.5">
+                          <div className="flex justify-between text-xs font-bold text-[#0F172A]">
+                            <span>{item.label}</span>
+                            <span>
+                              {item.count} ({pct}%)
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 bg-[#F1F5F9] rounded overflow-hidden border border-[#CBD5E1]">
+                            <div
+                              className={`h-full ${item.color} origin-left transition-transform duration-500`}
+                              style={{ transform: `scaleX(${pct / 100})` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Retención */}
+                <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 shadow-[5px_5px_0px_#0F172A]">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-display text-base font-bold text-[#0F172A]">
+                      ¿Qué hace que un cliente vuelva?
+                    </h4>
+                    <HeartHandshake className="w-5 h-5 text-[#D97706]" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      {
+                        key: "GOOD_SERVICE",
+                        label: "Atención rápida y amable",
+                        count: analytics.returnCounts.GOOD_SERVICE,
+                        color: "bg-[#059669]",
+                      },
+                      {
+                        key: "NEXT_DISCOUNT",
+                        label: "Cupón para la siguiente compra",
+                        count: analytics.returnCounts.NEXT_DISCOUNT,
+                        color: "bg-[#2563EB]",
+                      },
+                      {
+                        key: "WHATSAPP_UPDATES",
+                        label: "Avisos por WhatsApp de novedades",
+                        count: analytics.returnCounts.WHATSAPP_UPDATES,
+                        color: "bg-[#D97706]",
+                      },
+                      {
+                        key: "CHEAPEST_ONLY",
+                        label: "Solo quien tenga el menor precio",
+                        count: analytics.returnCounts.CHEAPEST_ONLY,
+                        color: "bg-[#64748B]",
+                      },
+                    ].map((item) => {
+                      const pct =
+                        analytics.totalReturnVotes > 0
+                          ? Math.round(
+                              (item.count / analytics.totalReturnVotes) * 100
+                            )
+                          : 0;
+                      return (
+                        <div key={item.key} className="space-y-0.5">
+                          <div className="flex justify-between text-xs font-bold text-[#0F172A]">
+                            <span>{item.label}</span>
+                            <span>
+                              {item.count} ({pct}%)
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 bg-[#F1F5F9] rounded overflow-hidden border border-[#CBD5E1]">
+                            <div
+                              className={`h-full ${item.color} origin-left transition-transform duration-500`}
+                              style={{ transform: `scaleX(${pct / 100})` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Golden Metric Banner */}
+                <div className="rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] p-3.5 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[11px] font-bold text-[#B45309] block uppercase tracking-wide">
+                      Regla de Oro en E-commerce
+                    </span>
+                    <p className="text-xs font-bold text-[#78350F]">
+                      Conseguir un cliente nuevo cuesta 5 veces más que hacer que uno existente vuelva a comprar.
+                    </p>
+                  </div>
+                  <span className="font-display text-3xl font-bold text-[#B45309] shrink-0">
+                    5x
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* =========================================================
+              FASE 5: FINAL_PODIUM ("Conclusión y Cuadro de Honor")
           ========================================================= */}
           {state.current_phase === "FINAL_PODIUM" && (
             <motion.div
@@ -1554,7 +2042,7 @@ export default function PresenterPage() {
                     Resumen final
                   </p>
                   <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#0F172A]">
-                    3 errores que hacen perder dinero
+                    4 lecciones que salvan negocios
                   </h2>
                 </div>
 
@@ -1582,8 +2070,7 @@ export default function PresenterPage() {
                         No atender en los primeros 5 minutos ni de noche
                       </h4>
                       <p className="text-sm text-[#334155]">
-                        El cliente compra de noche y si nadie le responde
-                        rápido, se va.
+                        El cliente compra de noche y si nadie le responde rápido, se va con la competencia.
                       </p>
                     </div>
                   </div>
@@ -1597,8 +2084,21 @@ export default function PresenterPage() {
                         Decidir por corazonadas en vez de mirar datos
                       </h4>
                       <p className="text-sm text-[#334155]">
-                        Bajar precios o gastar más en anuncios sin arreglar la
-                        web primero.
+                        Bajar precios o gastar más en anuncios sin arreglar el embudo primero.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 flex items-center gap-4 shadow-[4px_4px_0px_#0F172A]">
+                    <div className="h-11 w-11 rounded-xl bg-[#EFF6FF] border-2 border-[#2563EB] flex items-center justify-center text-[#2563EB] shrink-0 font-display font-bold text-xl">
+                      4
+                    </div>
+                    <div>
+                      <h4 className="font-display text-lg font-bold text-[#0F172A]">
+                        Ignorar la psicología del precio y descuidar la retención
+                      </h4>
+                      <p className="text-sm text-[#334155]">
+                        El "envío gratis" vende más que bajar precios, y retener clientes cuesta 5 veces menos.
                       </p>
                     </div>
                   </div>
