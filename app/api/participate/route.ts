@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const participant = upsertParticipant({
+    const participant = await upsertParticipant({
       id,
       nickname,
       avatar,
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       cart_abandon_reason,
     });
 
-    const syncData = getFullSyncData();
+    const syncData = await getFullSyncData();
     return NextResponse.json({
       participant,
       ...syncData,

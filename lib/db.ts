@@ -1,5 +1,4 @@
-import Database from "better-sqlite3";
-import path from "path";
+import { createClient, type Client, type InStatement } from "@libsql/client";
 
 export type PhaseType =
   | "LOBBY"
@@ -47,102 +46,134 @@ export interface Participant {
   created_at: number;
 }
 
-const dbPath = path.join(process.cwd(), "expo.db");
-
-const globalForDb = globalThis as unknown as {
-  sqliteDb: Database.Database | undefined;
-};
-
-export function getDb(): Database.Database {
-  if (!globalForDb.sqliteDb) {
-    const db = new Database(dbPath);
-    db.pragma("journal_mode = WAL");
-    db.pragma("synchronous = NORMAL");
-    initSchema(db);
-    globalForDb.sqliteDb = db;
+function resolveDatabaseUrl(): string {
+  const url = process.env.TURSO_DATABASE_URL;
+  if (url) return url;
+  if (process.env.VERCEL) {
+    throw new Error(
+      "TURSO_DATABASE_URL is not set. Configure the Turso env vars in Vercel."
+    );
   }
-  return globalForDb.sqliteDb;
+  // Local fallback (persists to a file in the project root).
+  return "file:expo.db";
 }
 
-function initSchema(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS presentation_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      current_phase TEXT DEFAULT 'LOBBY',
-      clean_outliers INTEGER DEFAULT 0,
-      unlocked_clues INTEGER DEFAULT 0,
-      custom_host_url TEXT,
-      updated_at INTEGER
-    );
+const globalForDb = globalThis as unknown as {
+  libsqlClient: Client | undefined;
+  libsqlInit: Promise<void> | undefined;
+};
 
-    CREATE TABLE IF NOT EXISTS participants (
-      id TEXT PRIMARY KEY,
-      nickname TEXT NOT NULL,
-      avatar TEXT DEFAULT 'fox',
-      tabs_open REAL NULL,
-      form_behavior TEXT NULL,
-      shopping_time TEXT NULL,
-      manager_decision TEXT NULL,
-      wait_tolerance TEXT NULL,
-      cart_abandon_reason TEXT NULL,
-      score INTEGER DEFAULT 0,
-      created_at INTEGER
-    );
-  `);
+function getClient(): Client {
+  if (!globalForDb.libsqlClient) {
+    globalForDb.libsqlClient = createClient({
+      url: resolveDatabaseUrl(),
+      authToken: process.env.TURSO_AUTH_TOKEN,
+      intMode: "number",
+    });
+  }
+  return globalForDb.libsqlClient;
+}
 
-  const cols = db.prepare("PRAGMA table_info(participants)").all() as Array<{
-    name: string;
-  }>;
-  if (!cols.some((c) => c.name === "avatar")) {
-    db.exec("ALTER TABLE participants ADD COLUMN avatar TEXT DEFAULT 'fox'");
+export async function getDb(): Promise<Client> {
+  const client = getClient();
+  if (!globalForDb.libsqlInit) {
+    globalForDb.libsqlInit = initSchema(client).catch((error) => {
+      globalForDb.libsqlInit = undefined;
+      throw error;
+    });
   }
-  if (!cols.some((c) => c.name === "wait_tolerance")) {
-    db.exec("ALTER TABLE participants ADD COLUMN wait_tolerance TEXT NULL");
+  await globalForDb.libsqlInit;
+  return client;
+}
+
+async function initSchema(client: Client) {
+  const schema: InStatement[] = [
+    {
+      sql: `CREATE TABLE IF NOT EXISTS presentation_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        current_phase TEXT DEFAULT 'LOBBY',
+        clean_outliers INTEGER DEFAULT 0,
+        unlocked_clues INTEGER DEFAULT 0,
+        custom_host_url TEXT,
+        updated_at INTEGER
+      )`,
+    },
+    {
+      sql: `CREATE TABLE IF NOT EXISTS participants (
+        id TEXT PRIMARY KEY,
+        nickname TEXT NOT NULL,
+        avatar TEXT DEFAULT 'fox',
+        tabs_open REAL NULL,
+        form_behavior TEXT NULL,
+        shopping_time TEXT NULL,
+        manager_decision TEXT NULL,
+        wait_tolerance TEXT NULL,
+        cart_abandon_reason TEXT NULL,
+        score INTEGER DEFAULT 0,
+        created_at INTEGER
+      )`,
+    },
+  ];
+  await client.batch(schema, "write");
+
+  const cols = (
+    await client.execute("PRAGMA table_info(participants)")
+  ).rows.map((row) => row.name as string);
+
+  if (!cols.includes("avatar")) {
+    await client.execute(
+      "ALTER TABLE participants ADD COLUMN avatar TEXT DEFAULT 'fox'"
+    );
   }
-  if (!cols.some((c) => c.name === "cart_abandon_reason")) {
-    db.exec(
+  if (!cols.includes("wait_tolerance")) {
+    await client.execute(
+      "ALTER TABLE participants ADD COLUMN wait_tolerance TEXT NULL"
+    );
+  }
+  if (!cols.includes("cart_abandon_reason")) {
+    await client.execute(
       "ALTER TABLE participants ADD COLUMN cart_abandon_reason TEXT NULL"
     );
   }
 
-  const existing = db
-    .prepare("SELECT id FROM presentation_state WHERE id = 1")
-    .get();
-  if (!existing) {
-    db.prepare(
-      `INSERT INTO presentation_state (id, current_phase, clean_outliers, unlocked_clues, custom_host_url, updated_at)
-       VALUES (1, 'LOBBY', 0, 0, NULL, ?)`
-    ).run(Date.now());
-  }
+  await client.execute({
+    sql: `INSERT OR IGNORE INTO presentation_state
+          (id, current_phase, clean_outliers, unlocked_clues, custom_host_url, updated_at)
+          VALUES (1, 'LOBBY', 0, 0, NULL, ?)`,
+    args: [Date.now()],
+  });
 }
 
-export function getFullSyncData(): {
+export async function getFullSyncData(): Promise<{
   state: PresentationState;
   participants: Participant[];
-} {
-  const db = getDb();
-  const state = db
-    .prepare("SELECT * FROM presentation_state WHERE id = 1")
-    .get() as PresentationState;
-  const participants = db
-    .prepare("SELECT * FROM participants ORDER BY created_at DESC")
-    .all() as Participant[];
+}> {
+  const db = await getDb();
+  const stateResult = await db.execute(
+    "SELECT * FROM presentation_state WHERE id = 1"
+  );
+  const participantsResult = await db.execute(
+    "SELECT * FROM participants ORDER BY created_at DESC"
+  );
 
-  return { state, participants };
+  return {
+    state: stateResult.rows[0] as unknown as PresentationState,
+    participants: participantsResult.rows as unknown as Participant[],
+  };
 }
 
-export function updatePresentationState(
+export async function updatePresentationState(
   updates: Partial<
     Pick<
       PresentationState,
       "current_phase" | "clean_outliers" | "unlocked_clues" | "custom_host_url"
     >
   >
-): PresentationState {
-  const db = getDb();
-  const current = db
-    .prepare("SELECT * FROM presentation_state WHERE id = 1")
-    .get() as PresentationState;
+): Promise<PresentationState> {
+  const db = await getDb();
+  const current = (
+    await db.execute("SELECT * FROM presentation_state WHERE id = 1")
+  ).rows[0] as unknown as PresentationState;
 
   const nextPhase = updates.current_phase ?? current.current_phase;
   const nextClean =
@@ -158,22 +189,23 @@ export function updatePresentationState(
       ? updates.custom_host_url
       : current.custom_host_url;
 
-  db.prepare(
-    `UPDATE presentation_state
-     SET current_phase = ?,
-         clean_outliers = ?,
-         unlocked_clues = ?,
-         custom_host_url = ?,
-         updated_at = ?
-     WHERE id = 1`
-  ).run(nextPhase, nextClean, nextClues, nextHost, Date.now());
+  await db.execute({
+    sql: `UPDATE presentation_state
+          SET current_phase = ?,
+              clean_outliers = ?,
+              unlocked_clues = ?,
+              custom_host_url = ?,
+              updated_at = ?
+          WHERE id = 1`,
+    args: [nextPhase, nextClean, nextClues, nextHost, Date.now()],
+  });
 
-  return db
-    .prepare("SELECT * FROM presentation_state WHERE id = 1")
-    .get() as PresentationState;
+  return (
+    await db.execute("SELECT * FROM presentation_state WHERE id = 1")
+  ).rows[0] as unknown as PresentationState;
 }
 
-export function upsertParticipant(data: {
+export async function upsertParticipant(data: {
   id: string;
   nickname?: string;
   avatar?: string;
@@ -183,11 +215,14 @@ export function upsertParticipant(data: {
   manager_decision?: ManagerDecisionType | null;
   wait_tolerance?: WaitToleranceType | null;
   cart_abandon_reason?: CartAbandonType | null;
-}): Participant {
-  const db = getDb();
-  const existing = db
-    .prepare("SELECT * FROM participants WHERE id = ?")
-    .get(data.id) as Participant | undefined;
+}): Promise<Participant> {
+  const db = await getDb();
+  const existing = (
+    await db.execute({
+      sql: "SELECT * FROM participants WHERE id = ?",
+      args: [data.id],
+    })
+  ).rows[0] as unknown as Participant | undefined;
 
   if (!existing) {
     const nickname = (data.nickname || "Invitado").trim().slice(0, 28);
@@ -209,23 +244,24 @@ export function upsertParticipant(data: {
       score += 30;
     }
 
-    db.prepare(
-      `INSERT INTO participants (
+    await db.execute({
+      sql: `INSERT INTO participants (
         id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, score, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      data.id,
-      nickname,
-      avatar,
-      tabsOpen,
-      formBehavior,
-      shoppingTime,
-      managerDecision,
-      waitTolerance,
-      cartAbandon,
-      score,
-      Date.now()
-    );
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        data.id,
+        nickname,
+        avatar,
+        tabsOpen,
+        formBehavior,
+        shoppingTime,
+        managerDecision,
+        waitTolerance,
+        cartAbandon,
+        score,
+        Date.now(),
+      ],
+    });
   } else {
     const nickname =
       data.nickname !== undefined
@@ -266,43 +302,48 @@ export function upsertParticipant(data: {
       score += 30;
     }
 
-    db.prepare(
-      `UPDATE participants
-       SET nickname = ?,
-           avatar = ?,
-           tabs_open = ?,
-           form_behavior = ?,
-           shopping_time = ?,
-           manager_decision = ?,
-           wait_tolerance = ?,
-           cart_abandon_reason = ?,
-           score = ?
-       WHERE id = ?`
-    ).run(
-      nickname,
-      avatar,
-      tabsOpen,
-      formBehavior,
-      shoppingTime,
-      managerDecision,
-      waitTolerance,
-      cartAbandon,
-      score,
-      data.id
-    );
+    await db.execute({
+      sql: `UPDATE participants
+            SET nickname = ?,
+                avatar = ?,
+                tabs_open = ?,
+                form_behavior = ?,
+                shopping_time = ?,
+                manager_decision = ?,
+                wait_tolerance = ?,
+                cart_abandon_reason = ?,
+                score = ?
+            WHERE id = ?`,
+      args: [
+        nickname,
+        avatar,
+        tabsOpen,
+        formBehavior,
+        shoppingTime,
+        managerDecision,
+        waitTolerance,
+        cartAbandon,
+        score,
+        data.id,
+      ],
+    });
   }
 
-  db.prepare("UPDATE presentation_state SET updated_at = ? WHERE id = 1").run(
-    Date.now()
-  );
+  await db.execute({
+    sql: "UPDATE presentation_state SET updated_at = ? WHERE id = 1",
+    args: [Date.now()],
+  });
 
-  return db
-    .prepare("SELECT * FROM participants WHERE id = ?")
-    .get(data.id) as Participant;
+  return (
+    await db.execute({
+      sql: "SELECT * FROM participants WHERE id = ?",
+      args: [data.id],
+    })
+  ).rows[0] as unknown as Participant;
 }
 
-export function seedSimulatedParticipants() {
-  const db = getDb();
+export async function seedSimulatedParticipants(): Promise<void> {
+  const db = await getDb();
   const avatars = [
     "fox",
     "robot",
@@ -550,19 +591,16 @@ export function seedSimulatedParticipants() {
     },
   ];
 
-  const insertStmt = db.prepare(`
-    INSERT OR REPLACE INTO participants (
-      id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, score, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   const now = Date.now();
-  const tx = db.transaction(() => {
-    demoProfiles.forEach((profile, idx) => {
-      const score =
-        profile.manager_decision === "FIX_FUNNEL_AUTOMATION" ? 150 : 70;
-      const avatar = avatars[idx % avatars.length];
-      insertStmt.run(
+  const statements: InStatement[] = demoProfiles.map((profile, idx) => {
+    const score =
+      profile.manager_decision === "FIX_FUNNEL_AUTOMATION" ? 150 : 70;
+    const avatar = avatars[idx % avatars.length];
+    return {
+      sql: `INSERT OR REPLACE INTO participants (
+        id, nickname, avatar, tabs_open, form_behavior, shopping_time, manager_decision, wait_tolerance, cart_abandon_reason, score, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
         `seed-user-${idx + 1}`,
         profile.nickname,
         avatar,
@@ -573,29 +611,34 @@ export function seedSimulatedParticipants() {
         profile.wait_tolerance,
         profile.cart_abandon_reason,
         score,
-        now - (25 - idx) * 1500
-      );
-    });
-    db.prepare("UPDATE presentation_state SET updated_at = ? WHERE id = 1").run(
-      Date.now()
-    );
+        now - (25 - idx) * 1500,
+      ],
+    };
   });
 
-  tx();
+  statements.push({
+    sql: "UPDATE presentation_state SET updated_at = ? WHERE id = 1",
+    args: [Date.now()],
+  });
+
+  await db.batch(statements, "write");
 }
 
-export function resetAllData() {
-  const db = getDb();
-  const tx = db.transaction(() => {
-    db.prepare("DELETE FROM participants").run();
-    db.prepare(
-      `UPDATE presentation_state
-       SET current_phase = 'LOBBY',
-           clean_outliers = 0,
-           unlocked_clues = 0,
-           updated_at = ?
-       WHERE id = 1`
-    ).run(Date.now());
-  });
-  tx();
+export async function resetAllData(): Promise<void> {
+  const db = await getDb();
+  await db.batch(
+    [
+      { sql: "DELETE FROM participants" },
+      {
+        sql: `UPDATE presentation_state
+              SET current_phase = 'LOBBY',
+                  clean_outliers = 0,
+                  unlocked_clues = 0,
+                  updated_at = ?
+              WHERE id = 1`,
+        args: [Date.now()],
+      },
+    ],
+    "write"
+  );
 }

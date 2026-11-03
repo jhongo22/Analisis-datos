@@ -9,11 +9,13 @@ export async function GET(request: Request) {
     start(controller) {
       let lastHash = "";
       let closed = false;
+      let inFlight = false;
 
-      const sendUpdate = () => {
-        if (closed) return;
+      const sendUpdate = async () => {
+        if (closed || inFlight) return;
+        inFlight = true;
         try {
-          const data = getFullSyncData();
+          const data = await getFullSyncData();
           const hash = `${data.state.updated_at}-${data.participants.length}`;
           if (hash !== lastHash) {
             lastHash = hash;
@@ -23,13 +25,17 @@ export async function GET(request: Request) {
           }
         } catch {
           // ignore transient read errors
+        } finally {
+          inFlight = false;
         }
       };
 
       // Initial push immediately
-      sendUpdate();
+      void sendUpdate();
 
-      const interval = setInterval(sendUpdate, 800);
+      const interval = setInterval(() => {
+        void sendUpdate();
+      }, 800);
 
       request.signal.addEventListener("abort", () => {
         closed = true;

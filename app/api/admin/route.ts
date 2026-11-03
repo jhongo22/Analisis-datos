@@ -16,13 +16,13 @@ export async function POST(request: Request) {
       body;
 
     if (action === "SEED_DEMO") {
-      seedSimulatedParticipants();
-      return NextResponse.json(getFullSyncData());
+      await seedSimulatedParticipants();
+      return NextResponse.json(await getFullSyncData());
     }
 
     if (action === "RESET_ALL") {
-      resetAllData();
-      return NextResponse.json(getFullSyncData());
+      await resetAllData();
+      return NextResponse.json(await getFullSyncData());
     }
 
     const updates: {
@@ -40,8 +40,8 @@ export async function POST(request: Request) {
     if (custom_host_url !== undefined)
       updates.custom_host_url = custom_host_url;
 
-    updatePresentationState(updates);
-    return NextResponse.json(getFullSyncData());
+    await updatePresentationState(updates);
+    return NextResponse.json(await getFullSyncData());
   } catch (error) {
     console.error("Error in POST /api/admin:", error);
     return NextResponse.json(
