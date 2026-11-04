@@ -1091,17 +1091,17 @@ export default function PlayPage() {
                           <span>Pregunta 1: Confianza</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Vas a comprar en una tienda online nueva que nunca habÃ­as visto. Â¿QuÃ© es lo PRIMERO que buscas para confiar?
+                          Vas a comprar en una tienda online que nunca habias visto. Que es lo PRIMERO que buscas para confiar?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "REVIEWS" as TrustSignalType,
-                              label: "Opiniones, fotos y reseÃ±as de otros clientes.",
+                              label: "Opiniones, fotos y reselas de otros clientes.",
                             },
                             {
                               id: "WHATSAPP_CONTACT" as TrustSignalType,
-                              label: "Que tengan botÃ³n de WhatsApp para hablar con alguien.",
+                              label: "Que tengan boton de WhatsApp para hablar con alguien.",
                             },
                             {
                               id: "FOLLOWERS" as TrustSignalType,
@@ -1109,7 +1109,7 @@ export default function PlayPage() {
                             },
                             {
                               id: "PRICE_ONLY" as TrustSignalType,
-                              label: "Solo el precio: si estÃ¡ muy barato, me arriesgo.",
+                              label: "Solo el precio: si esta muy barato, me arriesgo.",
                             },
                           ].map((opt) => (
                             <button
@@ -1132,30 +1132,30 @@ export default function PlayPage() {
                       <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-[#059669]">
                           <Truck className="w-4 h-4" />
-                          <span>Pregunta 2: El dilema del envÃ­o</span>
+                          <span>Pregunta 2: El dilema del envio</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Vas a comprar exactamente los mismos audÃ­fonos. Â¿En cuÃ¡l de estas tiendas compras?
+                          Vas a comprar exactamente los mismos audifonos. Â¿En cuÃ¡l de estas tiendas compras?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "FREE_SHIPPING" as ShippingChoiceType,
                               badge: "Tienda A",
-                              title: "$90.000 con Â¡ENVÃO GRATIS!",
+                              title: "$90.000 con ENVIO GRATIS!",
                               desc: "Un solo precio cerrado sin sorpresas.",
                             },
                             {
                               id: "PRICE_PLUS_SHIPPING" as ShippingChoiceType,
                               badge: "Tienda B",
-                              title: "$78.000 + $9.000 de envÃ­o",
-                              desc: "Producto mÃ¡s econÃ³mico por separado.",
+                              title: "$78.000 + $9.000 de envio",
+                              desc: "Proacto mas economico por separado.",
                             },
                             {
                               id: "CALCULATE_TOTAL" as ShippingChoiceType,
-                              badge: "Calculador",
-                              title: "Hago la cuenta: $78k + $9k = $87.000",
-                              desc: "Elijo la opciÃ³n mÃ¡s barata en total.",
+                              badge: "Hago la cuenta",
+                              title: "Hago la cuenta $78 mil + $9 mil = $87.000",
+                              desc: "Elijo la opcion mas barata en total.",
                             },
                           ].map((opt) => (
                             <button
@@ -1188,20 +1188,20 @@ export default function PlayPage() {
                       <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-[#D97706]">
                           <HeartHandshake className="w-4 h-4" />
-                          <span>Pregunta 3: RetenciÃ³n</span>
+                          <span>Pregunta 3: Retencio</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Ya compraste y el producto te llegÃ³ sÃºper bien. Â¿QuÃ© te motivarÃ­a a volver a comprar en esa misma tienda?
+                          Ya compraste y el producto te llega super bien. Que te motivaria a volver a comprar en esa misma tienda?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "GOOD_SERVICE" as ReturnReasonType,
-                              label: "Que la atenciÃ³n haya sido rÃ¡pida, confiable y amable.",
+                              label: "Que la atencion haya sido rapida, confiable y amable.",
                             },
                             {
                               id: "NEXT_DISCOUNT" as ReturnReasonType,
-                              label: "Un cupÃ³n de 15% de descuento para mi siguiente compra.",
+                              label: "Un cupon de 15% de descuento para mi siguiente compra.",
                             },
                             {
                               id: "WHATSAPP_UPDATES" as ReturnReasonType,
@@ -1209,7 +1209,7 @@ export default function PlayPage() {
                             },
                             {
                               id: "CHEAPEST_ONLY" as ReturnReasonType,
-                              label: "Nada; la prÃ³xima vez busco de nuevo quiÃ©n lo tenga mÃ¡s barato.",
+                              label: "Nada, la proxima vez busco quien lo tenga mas barato.",
                             },
                           ].map((opt) => (
                             <button
