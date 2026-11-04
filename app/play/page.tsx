@@ -68,6 +68,7 @@ export default function PlayPage() {
   // Phase 2 state
   const [selectedDecision, setSelectedDecision] =
     useState<ManagerDecisionType | null>(null);
+  const [phase2Submitted, setPhase2Submitted] = useState<boolean>(false);
 
   // Phase 3 state
   const [waitTolerance, setWaitTolerance] = useState<WaitToleranceType | null>(
@@ -145,8 +146,10 @@ export default function PlayPage() {
       }
 
       if (myRecord.manager_decision) {
+        setPhase2Submitted(true);
         setSelectedDecision(myRecord.manager_decision);
       } else {
+        setPhase2Submitted(false);
         setSelectedDecision(null);
       }
 
@@ -177,6 +180,7 @@ export default function PlayPage() {
       setHasJoined(false);
       setIsEditingProfile(false);
       setPhase1Submitted(false);
+      setPhase2Submitted(false);
       setSelectedDecision(null);
       setPhase3Submitted(false);
       setPhase4Submitted(false);
@@ -249,22 +253,25 @@ export default function PlayPage() {
     }
   };
 
-  const handleVoteDecision = async (decision: ManagerDecisionType) => {
-    if (!participantId) return;
-    setSelectedDecision(decision);
+  const handleSubmitPhase2 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDecision || !participantId) return;
     setIsSubmitting(true);
     try {
-      await fetch("/api/participate", {
+      const res = await fetch("/api/participate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: participantId,
           nickname: nicknameInput.trim() || "Participante",
           avatar: selectedAvatar,
-          manager_decision: decision,
+          manager_decision: selectedDecision,
         }),
       });
-      await refresh();
+      if (res.ok) {
+        setPhase2Submitted(true);
+        await refresh();
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -765,8 +772,7 @@ export default function PlayPage() {
                       <div className="p-4 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-sm text-[#991B1B] font-bold">
                         ¡Tú pusiste un número exagerado (${myRecord?.tabs_open !== null && myRecord?.tabs_open !== undefined
                           ? Math.round(Number(myRecord.tabs_open) * 1000).toLocaleString("es-CO")
-                          : "0"}{" "}
-                        ! Buen ejemplo de cómo se daña un reporte.
+                          : "0"})! Buen ejemplo de cómo se daña un reporte.
                       </div>
                     )}
                   </div>
@@ -782,67 +788,104 @@ export default function PlayPage() {
                   exit={{ opacity: 0, y: -10 }}
                   className="space-y-4"
                 >
-                  <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-1.5">
-                    <span className="text-xs font-bold text-[#2563EB]">
-                      Prueba 4: Tú eres el gerente
-                    </span>
-                    <p className="text-sm text-[#334155] leading-relaxed">
-                      Gastas <strong>$2.000.000</strong> en anuncios. Entran{" "}
-                      <strong>1.000 personas</strong>, pero solo{" "}
-                      <strong>15 compran</strong>. ¿Qué haces?
-                    </p>
-                  </div>
+                  {phase2Submitted ? (
+                    <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 text-center space-y-4 shadow-[6px_6px_0px_#059669]">
+                      <CheckCircle2 className="w-14 h-14 text-[#059669] mx-auto" />
+                      <h3 className="font-display text-2xl font-bold text-[#0F172A]">
+                        ¡Decisión enviada!
+                      </h3>
+                      <p className="text-sm text-[#334155]">
+                        Mira el proyector para descubrir qué decisión salvó a la
+                        empresa y cuál le hizo perder dinero.
+                      </p>
+                      <button
+                        onClick={() => setPhase2Submitted(false)}
+                        className="text-sm font-bold text-[#2563EB] underline"
+                      >
+                        Cambiar respuesta
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSubmitPhase2} className="space-y-4">
+                      <div>
+                        <p className="text-xs font-bold text-[#2563EB]">
+                          Prueba 4: El reto del gerente
+                        </p>
+                        <h2 className="font-display text-2xl font-bold text-[#0F172A]">
+                          ¿Cómo salvarías las ventas del negocio?
+                        </h2>
+                      </div>
 
-                  <div className="space-y-3">
-                    {[
-                      {
-                        id: "LOWER_PRICE" as ManagerDecisionType,
-                        badge: "Opción A: Bajar precios",
-                        title: "Hacer un descuento del 15% en todo.",
-                      },
-                      {
-                        id: "MORE_ADS" as ManagerDecisionType,
-                        badge: "Opción B: Más publicidad",
-                        title:
-                          "Pagar el doble en anuncios para traer más visitas.",
-                      },
-                      {
-                        id: "FIX_FUNNEL_AUTOMATION" as ManagerDecisionType,
-                        badge: "Opción C: Mirar los datos",
-                        title:
-                          "Quitar el formulario largo y atender por WhatsApp de noche.",
-                      },
-                    ].map((card) => {
-                      const isSelected = selectedDecision === card.id;
-                      return (
-                        <button
-                          key={card.id}
-                          type="button"
-                          disabled={isSubmitting}
-                          onClick={() => handleVoteDecision(card.id)}
-                          className={`w-full text-left p-4 rounded-2xl border-2 transition-colors ${
-                            isSelected
-                              ? "bg-[#EFF6FF] border-[#2563EB] shadow-[4px_4px_0px_#2563EB]"
-                              : "bg-white border-[#0F172A] hover:bg-[#F8FAFC]"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-bold text-[#475569]">
-                              {card.badge}
-                            </span>
-                            {isSelected && (
-                              <span className="text-xs font-bold text-[#2563EB] flex items-center gap-1">
-                                <CheckCircle2 className="w-4 h-4" /> Tu voto
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-base font-bold text-[#0F172A] leading-snug">
-                            {card.title}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                      <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-bold text-[#2563EB]">
+                          <TrendingUp className="w-4 h-4" />
+                          <span>Pregunta final (vale hasta +100 pts)</span>
+                        </div>
+                        <p className="text-base font-bold text-[#0F172A]">
+                          Gastas $2.000.000 en anuncios. Entran 1.000 personas a
+                          la web, pero solo 15 compran. ¿Qué haces como gerente?
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          {[
+                            {
+                              id: "LOWER_PRICE" as ManagerDecisionType,
+                              badge: "Opción A: Bajar precios",
+                              title: "Hacer un descuento del 15% en todo.",
+                              desc: "Sacrificar ganancia esperando que compren más.",
+                            },
+                            {
+                              id: "MORE_ADS" as ManagerDecisionType,
+                              badge: "Opción B: Más publicidad",
+                              title:
+                                "Pagar el doble en anuncios para traer más visitas.",
+                              desc: "Meter más personas a la misma página web.",
+                            },
+                            {
+                              id: "FIX_FUNNEL_AUTOMATION" as ManagerDecisionType,
+                              badge: "Opción C: Mirar los datos",
+                              title:
+                                "Quitar el formulario largo y atender por WhatsApp de noche.",
+                              desc: "Corregir las fugas que vimos en las pruebas anteriores.",
+                            },
+                          ].map((card) => {
+                            const isSelected = selectedDecision === card.id;
+                            return (
+                              <button
+                                key={card.id}
+                                type="button"
+                                onClick={() => setSelectedDecision(card.id)}
+                                className={`w-full text-left p-3.5 rounded-xl border-2 text-sm font-bold transition-colors ${
+                                  isSelected
+                                    ? "bg-[#EFF6FF] border-[#2563EB] text-[#1E3A8A]"
+                                    : "bg-[#F8FAFC] border-[#CBD5E1] text-[#0F172A]"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded bg-white border border-[#CBD5E1] font-bold text-[#0F172A]">
+                                    {card.badge}
+                                  </span>
+                                </div>
+                                <div className="text-base font-bold text-[#0F172A]">
+                                  {card.title}
+                                </div>
+                                <div className="text-xs font-normal text-[#475569] mt-0.5">
+                                  {card.desc}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !selectedDecision}
+                        className="w-full min-h-[52px] py-4 rounded-xl bg-[#059669] hover:bg-[#047857] disabled:opacity-40 text-white font-bold text-base border-2 border-[#0F172A] shadow-[4px_4px_0px_#0F172A]"
+                      >
+                        Enviar mi decisión
+                      </button>
+                    </form>
+                  )}
                 </motion.div>
               )}
 
@@ -1047,7 +1090,7 @@ export default function PlayPage() {
               )}
 
               {/* =========================================================
-                  FASE 4: PHASE_4_JOURNEY ("PsicologÃ­a y RetenciÃ³n")
+                  FASE 4: PHASE_4_JOURNEY ("Psicología y Retención")
               ========================================================= */}
               {state.current_phase === "PHASE_4_JOURNEY" && (
                 <motion.div
@@ -1061,10 +1104,10 @@ export default function PlayPage() {
                     <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 text-center space-y-4 shadow-[6px_6px_0px_#059669]">
                       <CheckCircle2 className="w-14 h-14 text-[#059669] mx-auto" />
                       <h3 className="font-display text-2xl font-bold text-[#0F172A]">
-                        Â¡Respuestas listas! (+30 pts)
+                        ¡Respuestas listas! (+30 pts)
                       </h3>
                       <p className="text-sm text-[#334155]">
-                        Mira el proyector para descubrir la trampa del envÃ­o gratis y el verdadero secreto de la retenciÃ³n.
+                        Mira el proyector para descubrir la trampa del envío gratis y el verdadero secreto de la retención.
                       </p>
                       <button
                         onClick={() => setPhase4Submitted(false)}
@@ -1091,17 +1134,17 @@ export default function PlayPage() {
                           <span>Pregunta 1: Confianza</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Vas a comprar en una tienda online que nunca habias visto. Que es lo PRIMERO que buscas para confiar?
+                          Vas a comprar en una tienda online que nunca habías visto. ¿Qué es lo PRIMERO que buscas para confiar?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "REVIEWS" as TrustSignalType,
-                              label: "Opiniones, fotos y reselas de otros clientes.",
+                              label: "Opiniones, fotos y reseñas de otros clientes.",
                             },
                             {
                               id: "WHATSAPP_CONTACT" as TrustSignalType,
-                              label: "Que tengan boton de WhatsApp para hablar con alguien.",
+                              label: "Que tengan botón de WhatsApp para hablar con alguien.",
                             },
                             {
                               id: "FOLLOWERS" as TrustSignalType,
@@ -1109,7 +1152,7 @@ export default function PlayPage() {
                             },
                             {
                               id: "PRICE_ONLY" as TrustSignalType,
-                              label: "Solo el precio: si esta muy barato, me arriesgo.",
+                              label: "Solo el precio: si está muy barato, me arriesgo.",
                             },
                           ].map((opt) => (
                             <button
@@ -1128,34 +1171,34 @@ export default function PlayPage() {
                         </div>
                       </div>
 
-                      {/* Pregunta 2: PsicologÃ­a del EnvÃ­o */}
+                      {/* Pregunta 2: Psicología del Envío */}
                       <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-[#059669]">
                           <Truck className="w-4 h-4" />
-                          <span>Pregunta 2: El dilema del envio</span>
+                          <span>Pregunta 2: El dilema del envío</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Vas a comprar exactamente los mismos audifonos. Â¿En cuÃ¡l de estas tiendas compras?
+                          Vas a comprar exactamente los mismos audífonos. ¿En cuál de estas tiendas compras?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "FREE_SHIPPING" as ShippingChoiceType,
                               badge: "Tienda A",
-                              title: "$90.000 con ENVIO GRATIS!",
+                              title: "$90.000 con ¡ENVÍO GRATIS!",
                               desc: "Un solo precio cerrado sin sorpresas.",
                             },
                             {
                               id: "PRICE_PLUS_SHIPPING" as ShippingChoiceType,
                               badge: "Tienda B",
-                              title: "$78.000 + $9.000 de envio",
-                              desc: "Proacto mas economico por separado.",
+                              title: "$78.000 + $9.000 de envío",
+                              desc: "Producto más económico por separado.",
                             },
                             {
                               id: "CALCULATE_TOTAL" as ShippingChoiceType,
                               badge: "Hago la cuenta",
-                              title: "Hago la cuenta $78 mil + $9 mil = $87.000",
-                              desc: "Elijo la opcion mas barata en total.",
+                              title: "Hago la cuenta y elijo la opción más barata",
+                              desc: "Elijo la opción más barata en total.",
                             },
                           ].map((opt) => (
                             <button
@@ -1184,24 +1227,24 @@ export default function PlayPage() {
                         </div>
                       </div>
 
-                      {/* Pregunta 3: RetenciÃ³n */}
+                      {/* Pregunta 3: Retención */}
                       <div className="rounded-2xl bg-white border-2 border-[#0F172A] p-4 space-y-2">
                         <div className="flex items-center gap-2 text-xs font-bold text-[#D97706]">
                           <HeartHandshake className="w-4 h-4" />
-                          <span>Pregunta 3: Retencio</span>
+                          <span>Pregunta 3: Retención</span>
                         </div>
                         <p className="text-base font-bold text-[#0F172A]">
-                          Ya compraste y el producto te llega super bien. Que te motivaria a volver a comprar en esa misma tienda?
+                          Ya compraste y el producto te llegó súper bien. ¿Qué te motivaría a volver a comprar en esa misma tienda?
                         </p>
                         <div className="space-y-2 pt-1">
                           {[
                             {
                               id: "GOOD_SERVICE" as ReturnReasonType,
-                              label: "Que la atencion haya sido rapida, confiable y amable.",
+                              label: "Que la atención haya sido rápida, confiable y amable.",
                             },
                             {
                               id: "NEXT_DISCOUNT" as ReturnReasonType,
-                              label: "Un cupon de 15% de descuento para mi siguiente compra.",
+                              label: "Un cupón de 15% de descuento para mi siguiente compra.",
                             },
                             {
                               id: "WHATSAPP_UPDATES" as ReturnReasonType,
@@ -1209,7 +1252,7 @@ export default function PlayPage() {
                             },
                             {
                               id: "CHEAPEST_ONLY" as ReturnReasonType,
-                              label: "Nada, la proxima vez busco quien lo tenga mas barato.",
+                              label: "Nada, la próxima vez busco quién lo tenga más barato.",
                             },
                           ].map((opt) => (
                             <button
@@ -1256,13 +1299,13 @@ export default function PlayPage() {
                 >
                   <div className="rounded-3xl bg-white border-2 border-[#0F172A] p-6 space-y-3 shadow-[6px_6px_0px_#059669]">
                     <span className="text-xs font-bold text-[#059669]">
-                      PsicologÃ­a del consumidor
+                      Psicología del consumidor
                     </span>
                     <h3 className="font-display text-2xl font-bold text-[#0F172A]">
                       El poder de lo "GRATIS"
                     </h3>
                     <p className="text-sm text-[#334155] leading-relaxed">
-                      Mira la pantalla del proyector: descubre cuÃ¡ntas personas prefirieron pagar <strong>mÃ¡s caro</strong> solo por no ver el cobro de envÃ­o por separado, y por quÃ© retener a un cliente cuesta 5 veces menos.
+                      Mira la pantalla del proyector: descubre cuántas personas prefirieron pagar <strong>más caro</strong> solo por no ver el cobro de envío por separado, y por qué retener a un cliente cuesta 5 veces menos.
                     </p>
                   </div>
                 </motion.div>
